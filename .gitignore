@@ -1,0 +1,6 @@
+/target
+.scratch/
+.work/sessions/.current-session
+.work/sessions/.pending-seeds.json*
+.work/sessions/*/.write-payload.md
+.work/sessions/*/.changelog-payload.md
