@@ -1,0 +1,78 @@
+{
+  "session_id": "2026-10-07__this-rust-repo-is-a-port-of-lsoda-fortran-implementation-located",
+  "feature_name": "this Rust repo is a port of LSODA fortran implementation located in DEV/FORTRAN/odepack",
+  "scratch_dir": ".scratch/tests/2026-10-07__this-rust-repo-is-a-port-of-lsoda-fortran-implementation-located",
+  "created_at": "2026-10-07T09:47:48.980Z",
+  "template_version": 2,
+  "history": [
+    {
+      "at": "2026-10-07T09:47:48.980Z",
+      "event": "session_started",
+      "phase": "grill",
+      "files": [
+        "01-grill/resume.md"
+      ]
+    },
+    {
+      "at": "2026-10-07T09:57:23.275Z",
+      "event": "auto_started",
+      "phase": "grill",
+      "detail": {
+        "target": "finish",
+        "steps": "write:grill → plan → write:plan → ship → finish",
+        "shipMode": "subagent+inline"
+      }
+    },
+    {
+      "at": "2026-10-07T09:57:38.801Z",
+      "event": "grill_written",
+      "phase": "plan-not-started",
+      "files": [
+        "01-grill/resume.md"
+      ]
+    },
+    {
+      "at": "2026-10-07T09:57:41.045Z",
+      "event": "plan_started",
+      "phase": "plan",
+      "files": [
+        "02-plan/plan.md"
+      ]
+    },
+    {
+      "at": "2026-10-07T09:58:23.851Z",
+      "event": "branch_created",
+      "phase": "plan",
+      "detail": {
+        "branch": "feat/lsoda-port",
+        "base": "main"
+      }
+    },
+    {
+      "at": "2026-10-07T09:58:23.881Z",
+      "event": "plan_written",
+      "phase": "ship",
+      "files": [
+        "02-plan/plan.md",
+        "02-plan/tickets/01-crate-skeleton.md",
+        "02-plan/tickets/02-linear-algebra.md",
+        "02-plan/tickets/03-leaf-routines.md",
+        "02-plan/tickets/04-jacobian-preparation.md",
+        "02-plan/tickets/05-stepper.md",
+        "02-plan/tickets/06-driver.md",
+        "02-plan/tickets/07-analytic-tests.md",
+        "02-plan/tickets/08-golden-harness-docs.md"
+      ],
+      "detail": {
+        "tickets": 8
+      }
+    }
+  ],
+  "current_phase": "ship",
+  "git": {
+    "branch": "feat/lsoda-port",
+    "base_branch": "main",
+    "branch_created_at": "2026-10-07T09:58:23.851Z",
+    "pr_url": null
+  }
+}
