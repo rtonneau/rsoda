@@ -1,6 +1,7 @@
 //! rsoda: a Rust port of the LSODA ODE solver (automatic Adams/BDF switching).
 
 pub mod error;
+pub mod linalg;
 pub mod options;
 pub mod solver;
 pub mod system;
