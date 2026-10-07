@@ -6,6 +6,7 @@ pub mod interpolate;
 pub mod linalg;
 pub mod norms;
 pub mod options;
+pub mod prja;
 pub mod solsy;
 pub mod solver;
 pub mod system;
