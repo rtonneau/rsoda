@@ -186,6 +186,30 @@
         "ticket": "05-stepper",
         "commit": "c4a4d9d"
       }
+    },
+    {
+      "at": "2026-10-07T10:37:20.818Z",
+      "event": "ticket_started",
+      "phase": "ship",
+      "files": [
+        "02-plan/tickets/06-driver.md",
+        "03-implement/06-driver/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "06-driver"
+      }
+    },
+    {
+      "at": "2026-10-07T11:03:24.080Z",
+      "event": "ticket_done",
+      "phase": "ship",
+      "files": [
+        "03-implement/06-driver/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "06-driver",
+        "commit": "8a82a0b"
+      }
     }
   ],
   "current_phase": "ship",
