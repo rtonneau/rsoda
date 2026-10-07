@@ -234,9 +234,33 @@
         "ticket": "07-analytic-tests",
         "commit": "02ded70"
       }
+    },
+    {
+      "at": "2026-10-07T11:05:15.744Z",
+      "event": "ticket_started",
+      "phase": "ship",
+      "files": [
+        "02-plan/tickets/08-golden-harness-docs.md",
+        "03-implement/08-golden-harness-docs/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "08-golden-harness-docs"
+      }
+    },
+    {
+      "at": "2026-10-07T11:08:18.251Z",
+      "event": "ticket_done",
+      "phase": "finish-pending",
+      "files": [
+        "03-implement/08-golden-harness-docs/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "08-golden-harness-docs",
+        "commit": "09d9fc8"
+      }
     }
   ],
-  "current_phase": "ship",
+  "current_phase": "finish-pending",
   "git": {
     "branch": "feat/lsoda-port",
     "base_branch": "main",
