@@ -258,14 +258,47 @@
         "ticket": "08-golden-harness-docs",
         "commit": "09d9fc8"
       }
+    },
+    {
+      "at": "2026-10-07T11:08:28.170Z",
+      "event": "changelog_written",
+      "phase": "finish-pending",
+      "detail": {
+        "bump": "minor"
+      }
+    },
+    {
+      "at": "2026-10-07T11:08:34.291Z",
+      "event": "pr_opened",
+      "phase": "finish-pending",
+      "detail": {
+        "url": "https://github.com/rtonneau/rsoda/pull/1"
+      }
+    },
+    {
+      "at": "2026-10-07T11:08:34.293Z",
+      "event": "session_finished",
+      "phase": "finished",
+      "files": [
+        "INDEX.md"
+      ]
     }
   ],
-  "current_phase": "finish-pending",
+  "current_phase": "finished",
   "git": {
     "branch": "feat/lsoda-port",
     "base_branch": "main",
     "branch_created_at": "2026-10-07T09:58:23.851Z",
-    "pr_url": null
+    "pr_url": "https://github.com/rtonneau/rsoda/pull/1"
   },
-  "ship_mode": "subagent+inline"
+  "ship_mode": "subagent+inline",
+  "changelog": {
+    "bump": "minor",
+    "floor": "minor",
+    "reason": null,
+    "bullets": 5,
+    "path": ".work/changelog/2026-10-07__this-rust-repo-is-a-port-of-lsoda-fortran-implementation-located.md",
+    "written_at": "2026-10-07T11:08:28.158Z"
+  },
+  "finished_at": "2026-10-07T11:08:34.293Z"
 }
