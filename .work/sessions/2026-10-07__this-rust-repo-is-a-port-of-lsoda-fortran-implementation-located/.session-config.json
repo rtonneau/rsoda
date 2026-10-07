@@ -162,6 +162,30 @@
         "ticket": "04-jacobian-preparation",
         "commit": "f53c14b"
       }
+    },
+    {
+      "at": "2026-10-07T10:14:53.730Z",
+      "event": "ticket_started",
+      "phase": "ship",
+      "files": [
+        "02-plan/tickets/05-stepper.md",
+        "03-implement/05-stepper/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "05-stepper"
+      }
+    },
+    {
+      "at": "2026-10-07T10:37:20.063Z",
+      "event": "ticket_done",
+      "phase": "ship",
+      "files": [
+        "03-implement/05-stepper/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "05-stepper",
+        "commit": "c4a4d9d"
+      }
     }
   ],
   "current_phase": "ship",
