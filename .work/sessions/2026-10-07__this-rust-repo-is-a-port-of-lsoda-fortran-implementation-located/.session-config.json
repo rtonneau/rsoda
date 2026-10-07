@@ -138,6 +138,30 @@
         "ticket": "03-leaf-routines",
         "commit": "0619603"
       }
+    },
+    {
+      "at": "2026-10-07T10:10:41.656Z",
+      "event": "ticket_started",
+      "phase": "ship",
+      "files": [
+        "02-plan/tickets/04-jacobian-preparation.md",
+        "03-implement/04-jacobian-preparation/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "04-jacobian-preparation"
+      }
+    },
+    {
+      "at": "2026-10-07T10:14:52.812Z",
+      "event": "ticket_done",
+      "phase": "ship",
+      "files": [
+        "03-implement/04-jacobian-preparation/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "04-jacobian-preparation",
+        "commit": "f53c14b"
+      }
     }
   ],
   "current_phase": "ship",
