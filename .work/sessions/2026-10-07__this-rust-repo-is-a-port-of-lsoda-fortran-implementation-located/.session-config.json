@@ -1,0 +1,304 @@
+{
+  "session_id": "2026-10-07__this-rust-repo-is-a-port-of-lsoda-fortran-implementation-located",
+  "feature_name": "this Rust repo is a port of LSODA fortran implementation located in DEV/FORTRAN/odepack",
+  "scratch_dir": ".scratch/tests/2026-10-07__this-rust-repo-is-a-port-of-lsoda-fortran-implementation-located",
+  "created_at": "2026-10-07T09:47:48.980Z",
+  "template_version": 2,
+  "history": [
+    {
+      "at": "2026-10-07T09:47:48.980Z",
+      "event": "session_started",
+      "phase": "grill",
+      "files": [
+        "01-grill/resume.md"
+      ]
+    },
+    {
+      "at": "2026-10-07T09:57:23.275Z",
+      "event": "auto_started",
+      "phase": "grill",
+      "detail": {
+        "target": "finish",
+        "steps": "write:grill → plan → write:plan → ship → finish",
+        "shipMode": "subagent+inline"
+      }
+    },
+    {
+      "at": "2026-10-07T09:57:38.801Z",
+      "event": "grill_written",
+      "phase": "plan-not-started",
+      "files": [
+        "01-grill/resume.md"
+      ]
+    },
+    {
+      "at": "2026-10-07T09:57:41.045Z",
+      "event": "plan_started",
+      "phase": "plan",
+      "files": [
+        "02-plan/plan.md"
+      ]
+    },
+    {
+      "at": "2026-10-07T09:58:23.851Z",
+      "event": "branch_created",
+      "phase": "plan",
+      "detail": {
+        "branch": "feat/lsoda-port",
+        "base": "main"
+      }
+    },
+    {
+      "at": "2026-10-07T09:58:23.881Z",
+      "event": "plan_written",
+      "phase": "ship",
+      "files": [
+        "02-plan/plan.md",
+        "02-plan/tickets/01-crate-skeleton.md",
+        "02-plan/tickets/02-linear-algebra.md",
+        "02-plan/tickets/03-leaf-routines.md",
+        "02-plan/tickets/04-jacobian-preparation.md",
+        "02-plan/tickets/05-stepper.md",
+        "02-plan/tickets/06-driver.md",
+        "02-plan/tickets/07-analytic-tests.md",
+        "02-plan/tickets/08-golden-harness-docs.md"
+      ],
+      "detail": {
+        "tickets": 8
+      }
+    },
+    {
+      "at": "2026-10-07T09:58:30.744Z",
+      "event": "ticket_started",
+      "phase": "ship",
+      "files": [
+        "02-plan/tickets/01-crate-skeleton.md",
+        "03-implement/01-crate-skeleton/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "01-crate-skeleton"
+      }
+    },
+    {
+      "at": "2026-10-07T10:03:07.858Z",
+      "event": "ticket_done",
+      "phase": "ship",
+      "files": [
+        "03-implement/01-crate-skeleton/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "01-crate-skeleton",
+        "commit": "3578f15"
+      }
+    },
+    {
+      "at": "2026-10-07T10:03:11.549Z",
+      "event": "ticket_started",
+      "phase": "ship",
+      "files": [
+        "02-plan/tickets/02-linear-algebra.md",
+        "03-implement/02-linear-algebra/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "02-linear-algebra"
+      }
+    },
+    {
+      "at": "2026-10-07T10:05:00.320Z",
+      "event": "ticket_done",
+      "phase": "ship",
+      "files": [
+        "03-implement/02-linear-algebra/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "02-linear-algebra",
+        "commit": "c5afbb6"
+      }
+    },
+    {
+      "at": "2026-10-07T10:05:03.909Z",
+      "event": "ticket_started",
+      "phase": "ship",
+      "files": [
+        "02-plan/tickets/03-leaf-routines.md",
+        "03-implement/03-leaf-routines/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "03-leaf-routines"
+      }
+    },
+    {
+      "at": "2026-10-07T10:10:40.669Z",
+      "event": "ticket_done",
+      "phase": "ship",
+      "files": [
+        "03-implement/03-leaf-routines/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "03-leaf-routines",
+        "commit": "0619603"
+      }
+    },
+    {
+      "at": "2026-10-07T10:10:41.656Z",
+      "event": "ticket_started",
+      "phase": "ship",
+      "files": [
+        "02-plan/tickets/04-jacobian-preparation.md",
+        "03-implement/04-jacobian-preparation/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "04-jacobian-preparation"
+      }
+    },
+    {
+      "at": "2026-10-07T10:14:52.812Z",
+      "event": "ticket_done",
+      "phase": "ship",
+      "files": [
+        "03-implement/04-jacobian-preparation/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "04-jacobian-preparation",
+        "commit": "f53c14b"
+      }
+    },
+    {
+      "at": "2026-10-07T10:14:53.730Z",
+      "event": "ticket_started",
+      "phase": "ship",
+      "files": [
+        "02-plan/tickets/05-stepper.md",
+        "03-implement/05-stepper/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "05-stepper"
+      }
+    },
+    {
+      "at": "2026-10-07T10:37:20.063Z",
+      "event": "ticket_done",
+      "phase": "ship",
+      "files": [
+        "03-implement/05-stepper/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "05-stepper",
+        "commit": "c4a4d9d"
+      }
+    },
+    {
+      "at": "2026-10-07T10:37:20.818Z",
+      "event": "ticket_started",
+      "phase": "ship",
+      "files": [
+        "02-plan/tickets/06-driver.md",
+        "03-implement/06-driver/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "06-driver"
+      }
+    },
+    {
+      "at": "2026-10-07T11:03:24.080Z",
+      "event": "ticket_done",
+      "phase": "ship",
+      "files": [
+        "03-implement/06-driver/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "06-driver",
+        "commit": "8a82a0b"
+      }
+    },
+    {
+      "at": "2026-10-07T11:03:24.939Z",
+      "event": "ticket_started",
+      "phase": "ship",
+      "files": [
+        "02-plan/tickets/07-analytic-tests.md",
+        "03-implement/07-analytic-tests/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "07-analytic-tests"
+      }
+    },
+    {
+      "at": "2026-10-07T11:05:14.946Z",
+      "event": "ticket_done",
+      "phase": "ship",
+      "files": [
+        "03-implement/07-analytic-tests/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "07-analytic-tests",
+        "commit": "02ded70"
+      }
+    },
+    {
+      "at": "2026-10-07T11:05:15.744Z",
+      "event": "ticket_started",
+      "phase": "ship",
+      "files": [
+        "02-plan/tickets/08-golden-harness-docs.md",
+        "03-implement/08-golden-harness-docs/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "08-golden-harness-docs"
+      }
+    },
+    {
+      "at": "2026-10-07T11:08:18.251Z",
+      "event": "ticket_done",
+      "phase": "finish-pending",
+      "files": [
+        "03-implement/08-golden-harness-docs/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "08-golden-harness-docs",
+        "commit": "09d9fc8"
+      }
+    },
+    {
+      "at": "2026-10-07T11:08:28.170Z",
+      "event": "changelog_written",
+      "phase": "finish-pending",
+      "detail": {
+        "bump": "minor"
+      }
+    },
+    {
+      "at": "2026-10-07T11:08:34.291Z",
+      "event": "pr_opened",
+      "phase": "finish-pending",
+      "detail": {
+        "url": "https://github.com/rtonneau/rsoda/pull/1"
+      }
+    },
+    {
+      "at": "2026-10-07T11:08:34.293Z",
+      "event": "session_finished",
+      "phase": "finished",
+      "files": [
+        "INDEX.md"
+      ]
+    }
+  ],
+  "current_phase": "finished",
+  "git": {
+    "branch": "feat/lsoda-port",
+    "base_branch": "main",
+    "branch_created_at": "2026-10-07T09:58:23.851Z",
+    "pr_url": "https://github.com/rtonneau/rsoda/pull/1"
+  },
+  "ship_mode": "subagent+inline",
+  "changelog": {
+    "bump": "minor",
+    "floor": "minor",
+    "reason": null,
+    "bullets": 5,
+    "path": ".work/changelog/2026-10-07__this-rust-repo-is-a-port-of-lsoda-fortran-implementation-located.md",
+    "written_at": "2026-10-07T11:08:28.158Z"
+  },
+  "finished_at": "2026-10-07T11:08:34.293Z"
+}
