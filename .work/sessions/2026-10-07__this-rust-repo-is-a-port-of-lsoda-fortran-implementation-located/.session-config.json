@@ -210,6 +210,30 @@
         "ticket": "06-driver",
         "commit": "8a82a0b"
       }
+    },
+    {
+      "at": "2026-10-07T11:03:24.939Z",
+      "event": "ticket_started",
+      "phase": "ship",
+      "files": [
+        "02-plan/tickets/07-analytic-tests.md",
+        "03-implement/07-analytic-tests/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "07-analytic-tests"
+      }
+    },
+    {
+      "at": "2026-10-07T11:05:14.946Z",
+      "event": "ticket_done",
+      "phase": "ship",
+      "files": [
+        "03-implement/07-analytic-tests/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "07-analytic-tests",
+        "commit": "02ded70"
+      }
     }
   ],
   "current_phase": "ship",
