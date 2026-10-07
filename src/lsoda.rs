@@ -126,6 +126,28 @@ type SwitchHook<'a> = Box<dyn FnMut(&MethodSwitch) + Send + 'a>;
 /// as by DLSODA's `ISTATE = 3`). A callback error is returned as is; after
 /// one in the middle of a step the solver is halted and every later call
 /// fails with [`InputError::Halted`].
+///
+/// # Example
+///
+/// Integrate `y' = -y`, `y(0) = 1`, and read the solution at `t = 1`:
+///
+/// ```
+/// use rsoda::{ClosureSystem, Lsoda, OptionsBuilder, Tolerance};
+///
+/// let system = ClosureSystem::new(|_t, y, f| {
+///     f[0] = -y[0];
+///     Ok(())
+/// });
+/// let options = OptionsBuilder::new(1)
+///     .tolerance(Tolerance::scalar(1e-10, 1e-12))
+///     .build(&system)?;
+/// let mut solver = Lsoda::new(system, options, 0.0, &[1.0])?;
+///
+/// let t = solver.integrate(1.0)?;
+/// assert_eq!(t, 1.0);
+/// assert!((solver.y()[0] - (-1.0f64).exp()).abs() < 1e-8);
+/// # Ok::<(), rsoda::LsodaError>(())
+/// ```
 pub struct Lsoda<'a, S> {
     system: S,
     opts: Options,
