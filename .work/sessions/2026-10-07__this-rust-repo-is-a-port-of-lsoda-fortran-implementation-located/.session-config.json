@@ -90,6 +90,30 @@
         "ticket": "01-crate-skeleton",
         "commit": "3578f15"
       }
+    },
+    {
+      "at": "2026-10-07T10:03:11.549Z",
+      "event": "ticket_started",
+      "phase": "ship",
+      "files": [
+        "02-plan/tickets/02-linear-algebra.md",
+        "03-implement/02-linear-algebra/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "02-linear-algebra"
+      }
+    },
+    {
+      "at": "2026-10-07T10:05:00.320Z",
+      "event": "ticket_done",
+      "phase": "ship",
+      "files": [
+        "03-implement/02-linear-algebra/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "02-linear-algebra",
+        "commit": "c5afbb6"
+      }
     }
   ],
   "current_phase": "ship",
