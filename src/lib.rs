@@ -1,8 +1,12 @@
 //! rsoda: a Rust port of the LSODA ODE solver (automatic Adams/BDF switching).
 
+pub mod coefficients;
 pub mod error;
+pub mod interpolate;
 pub mod linalg;
+pub mod norms;
 pub mod options;
+pub mod solsy;
 pub mod solver;
 pub mod system;
 
@@ -20,6 +24,7 @@ pub mod consts {
     pub const MXHNL0: usize = 10;
 }
 
+pub use coefficients::Method;
 pub use error::{InputError, LsodaError};
 pub use options::{JacobianKind, Options, OptionsBuilder, Tol, Tolerance};
 pub use system::{ClosureSystem, OdeSystem};
