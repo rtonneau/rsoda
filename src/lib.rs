@@ -9,6 +9,8 @@ pub mod options;
 pub mod prja;
 pub mod solsy;
 pub mod solver;
+pub mod state;
+pub mod stoda;
 pub mod system;
 
 /// Machine constants, matching the values DLSODA obtains from `DUMACH`.
