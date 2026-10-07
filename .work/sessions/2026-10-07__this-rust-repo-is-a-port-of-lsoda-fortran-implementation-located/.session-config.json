@@ -114,6 +114,30 @@
         "ticket": "02-linear-algebra",
         "commit": "c5afbb6"
       }
+    },
+    {
+      "at": "2026-10-07T10:05:03.909Z",
+      "event": "ticket_started",
+      "phase": "ship",
+      "files": [
+        "02-plan/tickets/03-leaf-routines.md",
+        "03-implement/03-leaf-routines/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "03-leaf-routines"
+      }
+    },
+    {
+      "at": "2026-10-07T10:10:40.669Z",
+      "event": "ticket_done",
+      "phase": "ship",
+      "files": [
+        "03-implement/03-leaf-routines/commit-log.md"
+      ],
+      "detail": {
+        "ticket": "03-leaf-routines",
+        "commit": "0619603"
+      }
     }
   ],
   "current_phase": "ship",
