@@ -4,11 +4,11 @@ pub mod coefficients;
 pub mod error;
 pub mod interpolate;
 pub mod linalg;
+pub mod lsoda;
 pub mod norms;
 pub mod options;
 pub mod prja;
 pub mod solsy;
-pub mod solver;
 pub mod state;
 pub mod stoda;
 pub mod system;
@@ -29,5 +29,6 @@ pub mod consts {
 
 pub use coefficients::Method;
 pub use error::{InputError, LsodaError};
+pub use lsoda::{Lsoda, MethodSwitch, Warning};
 pub use options::{JacobianKind, Options, OptionsBuilder, Tol, Tolerance};
 pub use system::{ClosureSystem, OdeSystem};

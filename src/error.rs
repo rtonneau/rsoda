@@ -2,7 +2,13 @@
 
 use std::fmt;
 
+use crate::interpolate::IntdyError;
+
 /// Reasons for an illegal-input return (`ISTATE = -3`).
+///
+/// The variants up to [`InputError::InvalidH0`] are detected when the
+/// options are built; the others by the driver ([`crate::Lsoda`]) during a
+/// call, as DLSODA does (messages 14 and 21 to 27).
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum InputError {
@@ -26,6 +32,33 @@ pub enum InputError {
     NegativeHmin(f64),
     /// `H0` is NaN.
     InvalidH0(f64),
+    /// The initial `y` does not have `neq` components (the fork's
+    /// `lsoda_integrate` check on `size(y)`).
+    YLength { expected: usize, got: usize },
+    /// `(TOUT - T) * H0 < 0`: `tout` lies behind `t` in the direction given
+    /// by `h0` (message 14).
+    H0Direction { t: f64, tout: f64, h0: f64 },
+    /// `EWT(i) <= 0` at the start of the problem (message 21). `index` is
+    /// 0-based.
+    ErrorWeightNonPositive { index: usize, value: f64 },
+    /// `tout` too close to `t` to start the integration (message 22).
+    TooutTooClose { t: f64, tout: f64 },
+    /// `ITASK = 3` and `tout` behind `TCUR - HU` (= `tp`) (message 23).
+    TooutBehindLastStep { tout: f64, tp: f64 },
+    /// `ITASK = 4` or `5` and `tcrit` behind `TCUR` (message 24).
+    TcritBehindTcur { tcrit: f64, tcur: f64 },
+    /// `ITASK = 4` or `5` and `tcrit` behind `tout` (message 25).
+    TcritBehindTout { tcrit: f64, tout: f64 },
+    /// Too much accuracy requested at the start of the problem (message
+    /// 26). Scaling the tolerances up by `tolsf` should let it start.
+    TooMuchAccuracyAtStart { tolsf: f64 },
+    /// Interpolating to `tout` failed (message 27, "trouble in DINTDY"):
+    /// `tout` lies behind the last step.
+    Interpolation(IntdyError),
+    /// A callback error stopped the solver in the middle of a step, so the
+    /// integration cannot be continued (the fork's `ISTATE = -8` is not a
+    /// legal input).
+    Halted,
 }
 
 impl fmt::Display for InputError {
@@ -45,6 +78,37 @@ impl fmt::Display for InputError {
             Self::NegativeHmax(v) => write!(f, "HMAX = {v} < 0"),
             Self::NegativeHmin(v) => write!(f, "HMIN = {v} < 0.0"),
             Self::InvalidH0(v) => write!(f, "H0 = {v} is not a number"),
+            Self::YLength { expected, got } => {
+                write!(f, "y has length {got}, expected NEQ = {expected}")
+            }
+            Self::H0Direction { t, tout, h0 } => write!(
+                f,
+                "TOUT (={tout}) behind T (={t}); integration direction is given by H0 (={h0})"
+            ),
+            Self::ErrorWeightNonPositive { index, value } => {
+                write!(f, "EWT({index}) is {value} <= 0.0")
+            }
+            Self::TooutTooClose { t, tout } => {
+                write!(f, "TOUT (={tout}) too close to T (={t}) to start integration")
+            }
+            Self::TooutBehindLastStep { tout, tp } => {
+                write!(f, "ITASK = 3 and TOUT (={tout}) behind TCUR - HU (= {tp})")
+            }
+            Self::TcritBehindTcur { tcrit, tcur } => {
+                write!(f, "ITASK = 4 or 5 and TCRIT (={tcrit}) behind TCUR (={tcur})")
+            }
+            Self::TcritBehindTout { tcrit, tout } => {
+                write!(f, "ITASK = 4 or 5 and TCRIT (={tcrit}) behind TOUT (={tout})")
+            }
+            Self::TooMuchAccuracyAtStart { tolsf } => write!(
+                f,
+                "at start of problem, too much accuracy requested for precision of machine (tolsf = {tolsf})"
+            ),
+            Self::Interpolation(e) => write!(f, "trouble in DINTDY: {e}"),
+            Self::Halted => write!(
+                f,
+                "integration halted by a callback error in the middle of a step; it cannot be continued"
+            ),
         }
     }
 }
