@@ -88,7 +88,7 @@ pub fn prja<S: OdeSystem + ?Sized>(
     nje: &mut usize,
 ) -> Result<PrjaOutput, LsodaError> {
     let n = wm.n;
-    assert_eq!(MatrixStorage::for_jacobian(&kind), wm.storage, "Jacobian kind and storage differ");
+    assert_eq!(MatrixStorage::for_jacobian(&kind), Some(wm.storage), "Jacobian kind and storage differ");
     assert!(y.len() >= n && ftem.len() >= n);
     assert!(input.yh1.len() >= n && input.ewt.len() >= n && input.savf.len() >= n);
 
@@ -206,6 +206,7 @@ pub fn prja<S: OdeSystem + ?Sized>(
             let info = dgbfa(&mut wm.a, meband, n, ml, mu, &mut wm.ipvt);
             Ok(PrjaOutput { pdnorm, singular: info != 0 })
         }
+        JacobianKind::Custom => unreachable!("custom kinds have no IterationMatrix"),
     }
 }
 
@@ -284,7 +285,7 @@ mod tests {
             JacobianKind::BandedUser { .. } => sys.with_jac(band_jac(n)),
             _ => sys,
         };
-        let mut wm = IterationMatrix::new(n, MatrixStorage::for_jacobian(&kind));
+        let mut wm = IterationMatrix::new(n, MatrixStorage::for_jacobian(&kind).unwrap());
         let mut y = s.y.clone();
         let mut ftem = vec![0.0; n];
         let (mut nfe, mut nje) = (3usize, 7usize);
@@ -298,6 +299,7 @@ mod tests {
             JacobianKind::DenseUser | JacobianKind::BandedUser { .. } => 3,
             JacobianKind::DenseFd => 3 + n,
             JacobianKind::BandedFd { ml, mu } => 3 + (ml + mu + 1).min(n),
+            JacobianKind::Custom => unreachable!(),
         };
         assert_eq!(nfe, expected_nfe, "{kind:?}");
         assert_eq!(y, s.y, "y must be restored");
@@ -439,7 +441,7 @@ mod tests {
         let log = std::cell::RefCell::new(Vec::new());
         let mut sys = recording_system(y0.clone(), &log);
         let kind = JacobianKind::BandedFd { ml, mu };
-        let mut wm = IterationMatrix::new(n, MatrixStorage::for_jacobian(&kind));
+        let mut wm = IterationMatrix::new(n, MatrixStorage::for_jacobian(&kind).unwrap());
         let mut y = y0.clone();
         let mut ftem = vec![0.0; n];
         let input = PrjaInput { tn: 0.0, h, el0, yh1: &y0, ewt: &ewt, savf: &savf };
@@ -479,7 +481,7 @@ mod tests {
             let e1 = err.clone();
             let e2 = err.clone();
             let mut sys = ClosureSystem::new(move |_, _, _| Err(e1.clone())).with_jac(move |_, _, _| Err(e2.clone()));
-            let mut wm = IterationMatrix::new(n, MatrixStorage::for_jacobian(&kind));
+            let mut wm = IterationMatrix::new(n, MatrixStorage::for_jacobian(&kind).unwrap());
             let mut y = s.y.clone();
             let mut ftem = vec![0.0; n];
             let input = PrjaInput { tn: 0.0, h: 0.1, el0: 1.0, yh1: &s.y, ewt: &s.ewt, savf: &s.savf };
@@ -522,7 +524,7 @@ mod tests {
                 }
                 Ok(())
             });
-            let mut wm = IterationMatrix::new(n, MatrixStorage::for_jacobian(&kind));
+            let mut wm = IterationMatrix::new(n, MatrixStorage::for_jacobian(&kind).unwrap());
             let mut y = y0.clone();
             let mut ftem = vec![0.0; n];
             // Powers of two keep the finite differences exact.

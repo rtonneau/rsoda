@@ -26,8 +26,9 @@
 use crate::coefficients::{Method, cfode};
 use crate::consts::UROUND;
 use crate::error::LsodaError;
+use crate::linsol::DynSystem;
 use crate::norms::vmnorm;
-use crate::prja::{PrjaInput, prja};
+use crate::prja::PrjaInput;
 use crate::state::State;
 use crate::system::OdeSystem;
 
@@ -390,8 +391,15 @@ pub fn stoda<S: OdeSystem + ?Sized>(st: &mut State, system: &mut S) -> Result<St
                             ewt: &st.ewt,
                             savf: &st.savf,
                         };
-                        let out =
-                            prja(system, kind, &input, &mut st.y, &mut st.acor, &mut st.wm, &mut st.nfe, &mut st.nje)?;
+                        let out = st.wm.prepare(
+                            &kind,
+                            &mut DynSystem(&mut *system),
+                            &input,
+                            &mut st.y,
+                            &mut st.acor,
+                            &mut st.nfe,
+                            &mut st.nje,
+                        )?;
                         // DPRJA's outputs IERPJ, JCUR = 1 and PDNORM.
                         st.ierpj = out.ierpj();
                         st.jcur = true;
@@ -1470,7 +1478,9 @@ mod tests {
                 assert_ne!(st.meth, meth);
                 assert_eq!((st.icount, st.pdlast, st.jstart), (20, 0.0, -1));
                 match st.meth {
-                    Method::Bdf => assert_eq!((st.miter, st.maxord), (Some(JacobianKind::DenseFd), 5)),
+                    Method::Bdf => {
+                        assert_eq!((st.miter, st.maxord), (Some(JacobianKind::DenseFd), 5))
+                    }
                     Method::Adams => assert_eq!((st.miter, st.maxord), (None, 12)),
                 }
             }

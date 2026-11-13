@@ -70,7 +70,8 @@ impl Tolerance {
     }
 }
 
-/// How the Jacobian is obtained and stored (Fortran `JT` 1, 2, 4, 5).
+/// How the Jacobian is obtained and stored (Fortran `JT` 1, 2, 4, 5), or a
+/// user-supplied linear solver.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JacobianKind {
     /// `JT = 1`: user-supplied dense.
@@ -81,6 +82,9 @@ pub enum JacobianKind {
     BandedUser { ml: usize, mu: usize },
     /// `JT = 5`: finite-difference banded.
     BandedFd { ml: usize, mu: usize },
+    /// A user-supplied [`crate::LinearSolver`] owns the iteration matrix and
+    /// computes the Jacobian itself (see [`crate::Lsoda::with_linear_solver`]).
+    Custom,
 }
 
 impl JacobianKind {

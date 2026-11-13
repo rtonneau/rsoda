@@ -26,6 +26,9 @@ pub enum InputError {
     IllegalMu { mu: usize, neq: usize },
     /// A user-supplied Jacobian kind was selected but the system provides none.
     MissingJacobian,
+    /// [`crate::JacobianKind::Custom`] was selected but no linear solver was
+    /// given ([`crate::Lsoda::with_linear_solver`]).
+    MissingLinearSolver,
     /// `HMAX < 0` (or NaN).
     NegativeHmax(f64),
     /// `HMIN < 0` (or NaN).
@@ -79,6 +82,9 @@ impl fmt::Display for InputError {
             Self::IllegalMu { mu, neq } => write!(f, "MU = {mu} illegal: must be < NEQ = {neq}"),
             Self::MissingJacobian => {
                 write!(f, "user-supplied Jacobian requested but none provided")
+            }
+            Self::MissingLinearSolver => {
+                write!(f, "custom linear solver requested but none provided")
             }
             Self::NegativeHmax(v) => write!(f, "HMAX = {v} < 0"),
             Self::NegativeHmin(v) => write!(f, "HMIN = {v} < 0.0"),

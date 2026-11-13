@@ -28,9 +28,9 @@ use crate::coefficients::Method;
 use crate::consts::{MXHNL0, MXSTP0, UROUND};
 use crate::error::{InputError, LsodaError};
 use crate::interpolate::{StepData, intdy};
+use crate::linsol::{LinearSolver, MatrixSolver, builtin_solver, same_storage};
 use crate::norms::{ewset, invert_weights, vmnorm};
 use crate::options::{JacobianKind, Options, OptionsBuilder, Tol, Tolerance};
-use crate::solsy::{IterationMatrix, MatrixStorage};
 use crate::state::State;
 use crate::stoda::{StepOutcome, stoda};
 use crate::system::OdeSystem;
@@ -198,6 +198,9 @@ pub struct Lsoda<'a, S> {
     nhnil: usize,
     on_warning: Option<WarningHook<'a>>,
     on_switch: Option<SwitchHook<'a>>,
+    /// The user's linear solver for [`JacobianKind::Custom`] while it is not
+    /// in use by the state.
+    custom: Option<Box<dyn LinearSolver>>,
 }
 
 impl<S> fmt::Debug for Lsoda<'_, S> {
@@ -223,13 +226,48 @@ impl<'a, S: OdeSystem> Lsoda<'a, S> {
     /// # Errors
     ///
     /// [`LsodaError::IllegalInput`] for invalid options or a `y0` whose
-    /// length is not `options.neq`.
+    /// length is not `options.neq`; [`InputError::MissingLinearSolver`] for
+    /// [`JacobianKind::Custom`] (use [`Lsoda::with_linear_solver`]).
     pub fn new(system: S, options: Options, t0: f64, y0: &[f64]) -> Result<Self, LsodaError> {
+        Self::create(system, options, t0, y0, None)
+    }
+
+    /// [`Lsoda::new`] with a user-supplied linear solver for the stiff
+    /// corrector: `options.jacobian` is set to [`JacobianKind::Custom`], so
+    /// `solver` forms and solves the iteration matrix whenever BDF is in use.
+    /// The solver is kept by the integrator: a later
+    /// [`Lsoda::set_jacobian`] back to [`JacobianKind::Custom`] reuses it.
+    ///
+    /// # Errors
+    ///
+    /// As [`Lsoda::new`].
+    pub fn with_linear_solver(
+        system: S,
+        mut options: Options,
+        t0: f64,
+        y0: &[f64],
+        solver: Box<dyn LinearSolver>,
+    ) -> Result<Self, LsodaError> {
+        options.jacobian = JacobianKind::Custom;
+        Self::create(system, options, t0, y0, Some(solver))
+    }
+
+    fn create(
+        system: S,
+        options: Options,
+        t0: f64,
+        y0: &[f64],
+        mut custom: Option<Box<dyn LinearSolver>>,
+    ) -> Result<Self, LsodaError> {
         let opts = checked(options, &system)?;
         if y0.len() != opts.neq {
             return Err(InputError::YLength { expected: opts.neq, got: y0.len() }.into());
         }
-        let mut st = State::new(opts.neq, opts.jacobian, opts.mxordn, opts.mxords);
+        if opts.jacobian == JacobianKind::Custom && custom.is_none() {
+            return Err(InputError::MissingLinearSolver.into());
+        }
+        let wm = take_solver(&mut custom, opts.neq, &opts.jacobian);
+        let mut st = State::with_solver(opts.neq, opts.jacobian, opts.mxordn, opts.mxords, wm);
         st.tn = t0;
         st.tsw = t0;
         Ok(Self {
@@ -244,6 +282,7 @@ impl<'a, S: OdeSystem> Lsoda<'a, S> {
             nhnil: 0,
             on_warning: None,
             on_switch: None,
+            custom,
         })
     }
 
@@ -554,7 +593,13 @@ impl<'a, S: OdeSystem> Lsoda<'a, S> {
         // JSTART = 0, NST = NJE = NSLAST = 0, HU = 0, NQU = 0, MUSED = 0,
         // METH = 1, MITER = 0, MAXORD = MXORDN and the CCMAX, MAXCOR, MSBP,
         // MXNCF constants are set by State::new.
-        let mut st = State::new(n, o.jacobian, o.mxordn, o.mxords);
+        // The linear solver of the old state goes back to the pool (a custom
+        // one is kept); built-in kinds get fresh zeroed storage, as before.
+        let placeholder = Box::new(MatrixSolver::new(1, &JacobianKind::DenseFd).unwrap());
+        let old = std::mem::replace(&mut self.st.wm, placeholder);
+        release_solver(&mut self.custom, &self.st.wm_kind, old);
+        let wm = take_solver(&mut self.custom, n, &o.jacobian);
+        let mut st = State::with_solver(n, o.jacobian, o.mxordn, o.mxords, wm);
         st.hmxi = hmxi(o.hmax);
         st.hmin = o.hmin;
         st.tn = t;
@@ -854,11 +899,13 @@ impl<'a, S: OdeSystem> Lsoda<'a, S> {
     /// is used (`JSTART = -1` forces `IPUP`).
     fn match_matrix_storage(&mut self) {
         let st = &mut self.st;
-        if let Some(kind) = st.miter {
-            let storage = MatrixStorage::for_jacobian(&kind);
-            if st.wm.storage != storage {
-                st.wm = IterationMatrix::new(st.n, storage);
-            }
+        if let Some(kind) = st.miter
+            && !same_storage(&st.wm_kind, &kind)
+        {
+            let wm = take_solver(&mut self.custom, st.n, &kind);
+            let old = std::mem::replace(&mut st.wm, wm);
+            release_solver(&mut self.custom, &st.wm_kind, old);
+            st.wm_kind = kind;
         }
     }
 
@@ -908,7 +955,11 @@ impl<'a, S: OdeSystem> Lsoda<'a, S> {
     fn update(&mut self, change: impl FnOnce(&mut Options)) -> Result<(), LsodaError> {
         let mut o = self.opts.clone();
         change(&mut o);
-        self.opts = checked(o, &self.system)?;
+        let o = checked(o, &self.system)?;
+        if o.jacobian == JacobianKind::Custom && self.custom.is_none() && self.st.wm_kind != JacobianKind::Custom {
+            return Err(InputError::MissingLinearSolver.into());
+        }
+        self.opts = o;
         self.mark_changed();
         Ok(())
     }
@@ -919,6 +970,23 @@ impl<'a, S: OdeSystem> Lsoda<'a, S> {
         if self.init {
             self.changed = true;
         }
+    }
+}
+
+/// A linear solver for `kind`: the user's (moved out of `custom`) for
+/// [`JacobianKind::Custom`], otherwise fresh built-in storage.
+fn take_solver(custom: &mut Option<Box<dyn LinearSolver>>, n: usize, kind: &JacobianKind) -> Box<dyn LinearSolver> {
+    match builtin_solver(n, kind) {
+        Some(wm) => wm,
+        None => custom.take().expect("custom linear solver checked when selected"),
+    }
+}
+
+/// Gives back a linear solver allocated for `kind`: the user's is kept in
+/// `custom`, a built-in one is dropped.
+fn release_solver(custom: &mut Option<Box<dyn LinearSolver>>, kind: &JacobianKind, wm: Box<dyn LinearSolver>) {
+    if *kind == JacobianKind::Custom {
+        *custom = Some(wm);
     }
 }
 
@@ -1642,7 +1710,7 @@ mod tests {
         s.set_jacobian(JacobianKind::BandedFd { ml: 2, mu: 2 }).unwrap();
         s.integrate(4.0).unwrap();
         assert_eq!(s.st.jtyp, JacobianKind::BandedFd { ml: 2, mu: 2 });
-        assert_eq!((s.st.miter, s.st.wm.storage), (Some(JacobianKind::DenseFd), MatrixStorage::Dense));
+        assert_eq!((s.st.miter, s.st.wm_kind), (Some(JacobianKind::DenseFd), JacobianKind::DenseFd));
         assert_rober_accurate(s.y(), 4.0, "dense MITER kept");
 
         // ... while a banded MITER keeps its type but takes the new band
@@ -1652,7 +1720,10 @@ mod tests {
         s.set_jacobian(JacobianKind::BandedUser { ml: 1, mu: 2 }).unwrap();
         s.integrate(4.0).unwrap();
         assert_eq!(s.st.miter, Some(JacobianKind::BandedFd { ml: 1, mu: 2 }));
-        assert_eq!(s.st.wm.storage, MatrixStorage::Banded { ml: 1, mu: 2 });
+        assert_eq!(
+            crate::solsy::MatrixStorage::for_jacobian(&s.st.wm_kind),
+            Some(crate::solsy::MatrixStorage::Banded { ml: 1, mu: 2 })
+        );
         assert_rober_accurate(s.y(), 4.0, "banded MITER with new band");
 
         // A change made while Adams is in use applies at the switch to BDF.
@@ -1662,7 +1733,10 @@ mod tests {
         s.set_jacobian(JacobianKind::BandedUser { ml: 2, mu: 2 }).unwrap();
         s.integrate(0.4).unwrap();
         assert_eq!(s.st.miter, Some(JacobianKind::BandedUser { ml: 2, mu: 2 }));
-        assert_eq!(s.st.wm.storage, MatrixStorage::Banded { ml: 2, mu: 2 });
+        assert_eq!(
+            crate::solsy::MatrixStorage::for_jacobian(&s.st.wm_kind),
+            Some(crate::solsy::MatrixStorage::Banded { ml: 2, mu: 2 })
+        );
         assert_rober_accurate(s.y(), 0.4, "JT changed before the switch");
     }
 
@@ -1818,5 +1892,83 @@ mod tests {
             lowered |= v.nq < v.nqu;
         }
         assert!(lowered, "the Robertson run should lower the order at least once");
+    }
+
+    /// A user linear solver wrapping the built-in dense one, counting its
+    /// calls through shared counters.
+    struct CountingDense {
+        inner: MatrixSolver,
+        calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl LinearSolver for CountingDense {
+        fn prepare(
+            &mut self,
+            kind: &JacobianKind,
+            system: &mut dyn OdeSystem,
+            input: &crate::prja::PrjaInput<'_>,
+            y: &mut [f64],
+            ftem: &mut [f64],
+            nfe: &mut usize,
+            nje: &mut usize,
+        ) -> Result<crate::prja::PrjaOutput, LsodaError> {
+            assert_eq!(*kind, JacobianKind::Custom);
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.inner.prepare(&JacobianKind::DenseUser, system, input, y, ftem, nfe, nje)
+        }
+
+        fn solve(&mut self, h: f64, el0: f64, x: &mut [f64]) -> Result<(), crate::solsy::SingularMatrix> {
+            self.inner.solve(h, el0, x)
+        }
+    }
+
+    fn counting_dense(n: usize) -> (Box<dyn LinearSolver>, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let inner = MatrixSolver::new(n, &JacobianKind::DenseUser).unwrap();
+        (Box::new(CountingDense { inner, calls: calls.clone() }), calls)
+    }
+
+    #[test]
+    fn lsoda_custom_linear_solver_matches_builtin_bit_for_bit() {
+        let mut reference = rober(JacobianKind::DenseUser);
+        let opts = OptionsBuilder::new(3).tolerance(rober_tol()).build(&robertson()).unwrap();
+        let (solver, calls) = counting_dense(3);
+        let mut custom = Lsoda::with_linear_solver(robertson(), opts, 0.0, &[1.0, 0.0, 0.0], solver).unwrap();
+        assert_eq!(custom.options().jacobian, JacobianKind::Custom);
+        for k in 0..8 {
+            let tout = 0.4 * 10f64.powi(k);
+            reference.integrate(tout).unwrap();
+            custom.integrate(tout).unwrap();
+            assert_eq!(custom.y(), reference.y(), "t = {tout}");
+        }
+        assert_eq!((custom.nst(), custom.nfe(), custom.nje()), (reference.nst(), reference.nfe(), reference.nje()));
+        assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed), reference.nje());
+        assert!(reference.nje() > 0);
+    }
+
+    #[test]
+    fn lsoda_custom_linear_solver_is_kept_across_kind_changes() {
+        let opts = OptionsBuilder::new(3).tolerance(rober_tol()).build(&robertson()).unwrap();
+        let (solver, calls) = counting_dense(3);
+        let mut s = Lsoda::with_linear_solver(robertson(), opts, 0.0, &[1.0, 0.0, 0.0], solver).unwrap();
+        s.integrate(0.4).unwrap();
+        let used = calls.load(std::sync::atomic::Ordering::Relaxed);
+        assert!(used > 0);
+        // Away to a built-in kind (applies at the next switch to BDF) and
+        // back: the custom solver is still there to be selected.
+        s.set_jacobian(JacobianKind::DenseFd).unwrap();
+        s.set_jacobian(JacobianKind::Custom).unwrap();
+        s.integrate(4.0).unwrap();
+        assert!(calls.load(std::sync::atomic::Ordering::Relaxed) > used);
+        assert_rober_accurate(s.y(), 4.0, "custom solver kept");
+    }
+
+    #[test]
+    fn lsoda_custom_kind_needs_a_linear_solver() {
+        let opts = OptionsBuilder::new(3).jacobian(JacobianKind::Custom).build(&robertson()).unwrap();
+        assert_eq!(illegal(Lsoda::new(robertson(), opts, 0.0, &[1.0, 0.0, 0.0])), InputError::MissingLinearSolver);
+        let mut s = rober(JacobianKind::DenseFd);
+        assert_eq!(illegal(s.set_jacobian(JacobianKind::Custom)), InputError::MissingLinearSolver);
+        assert_eq!(s.options().jacobian, JacobianKind::DenseFd);
     }
 }

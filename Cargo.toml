@@ -4,3 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+
+# The port keeps the Fortran's index loops, its NaN-aware negated
+# comparisons (`!(x >= 0.0)`), its LINPACK size checks and its argument
+# lists, so these style lints are allowed crate-wide.
+[lints.clippy]
+needless_range_loop = "allow"
+neg_cmp_op_on_partial_ord = "allow"
+int_plus_one = "allow"
+too_many_arguments = "allow"

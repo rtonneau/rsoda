@@ -24,11 +24,13 @@ pub enum MatrixStorage {
 }
 
 impl MatrixStorage {
-    /// Storage used for a Jacobian kind.
-    pub fn for_jacobian(kind: &JacobianKind) -> Self {
+    /// Storage used for a Jacobian kind; `None` for a kind whose linear
+    /// solver is not an [`IterationMatrix`] ([`JacobianKind::Custom`]).
+    pub fn for_jacobian(kind: &JacobianKind) -> Option<Self> {
         match *kind {
-            JacobianKind::DenseUser | JacobianKind::DenseFd => Self::Dense,
-            JacobianKind::BandedUser { ml, mu } | JacobianKind::BandedFd { ml, mu } => Self::Banded { ml, mu },
+            JacobianKind::DenseUser | JacobianKind::DenseFd => Some(Self::Dense),
+            JacobianKind::BandedUser { ml, mu } | JacobianKind::BandedFd { ml, mu } => Some(Self::Banded { ml, mu }),
+            JacobianKind::Custom => None,
         }
     }
 }
@@ -198,16 +200,17 @@ mod tests {
 
     #[test]
     fn solsy_storage_from_jacobian_kind() {
-        assert_eq!(MatrixStorage::for_jacobian(&JacobianKind::DenseFd), MatrixStorage::Dense);
-        assert_eq!(MatrixStorage::for_jacobian(&JacobianKind::DenseUser), MatrixStorage::Dense);
+        assert_eq!(MatrixStorage::for_jacobian(&JacobianKind::DenseFd), Some(MatrixStorage::Dense));
+        assert_eq!(MatrixStorage::for_jacobian(&JacobianKind::DenseUser), Some(MatrixStorage::Dense));
         assert_eq!(
             MatrixStorage::for_jacobian(&JacobianKind::BandedFd { ml: 2, mu: 1 }),
-            MatrixStorage::Banded { ml: 2, mu: 1 }
+            Some(MatrixStorage::Banded { ml: 2, mu: 1 })
         );
         assert_eq!(
             MatrixStorage::for_jacobian(&JacobianKind::BandedUser { ml: 0, mu: 3 }),
-            MatrixStorage::Banded { ml: 0, mu: 3 }
+            Some(MatrixStorage::Banded { ml: 0, mu: 3 })
         );
+        assert_eq!(MatrixStorage::for_jacobian(&JacobianKind::Custom), None);
     }
 
     #[test]
