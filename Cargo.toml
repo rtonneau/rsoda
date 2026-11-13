@@ -1,6 +1,6 @@
 [package]
 name = "rsoda"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 
 [dependencies]
@@ -9,6 +9,8 @@ faer = { version = "0.24", default-features = false, features = ["std", "sparse-
 [features]
 # Sparse LU linear solver (SparseLu) for the sparse Jacobian kinds, built on faer.
 sparse = ["dep:faer"]
+# Call counts and wall times of the linear solver (Lsoda::timing), for profiling.
+timing = []
 
 # The port keeps the Fortran's index loops, its NaN-aware negated
 # comparisons (`!(x >= 0.0)`), its LINPACK size checks and its argument

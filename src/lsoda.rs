@@ -469,6 +469,13 @@ impl<'a, S: OdeSystem> Lsoda<'a, S> {
         self.st.nje
     }
 
+    /// Linear-solver call counts and wall times since the integration
+    /// started (cargo feature `timing`). See [`crate::TimingStats`].
+    #[cfg(feature = "timing")]
+    pub fn timing(&self) -> crate::TimingStats {
+        self.st.timing
+    }
+
     /// `NQU` (`IWORK(14)`): the order last used successfully (0 before the
     /// first step).
     pub fn nqu(&self) -> usize {
