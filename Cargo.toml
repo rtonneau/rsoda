@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+faer = { version = "0.24", default-features = false, features = ["std", "sparse-linalg"], optional = true }
+
+[features]
+# Sparse LU linear solver (SparseLu) for the sparse Jacobian kinds, built on faer.
+sparse = ["dep:faer"]
 
 # The port keeps the Fortran's index loops, its NaN-aware negated
 # comparisons (`!(x >= 0.0)`), its LINPACK size checks and its argument

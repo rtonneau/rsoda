@@ -187,10 +187,10 @@ impl State {
     ///
     /// # Panics
     ///
-    /// For [`JacobianKind::Custom`], which has no built-in solver: use
-    /// [`State::with_solver`].
+    /// For the sparse kinds and [`JacobianKind::Custom`], whose solver needs
+    /// more than `n`: use [`State::with_solver`].
     pub fn new(n: usize, jtyp: JacobianKind, mxordn: usize, mxords: usize) -> Self {
-        let wm = builtin_solver(n, &jtyp).expect("a custom Jacobian kind needs State::with_solver");
+        let wm = builtin_solver(n, &jtyp, None).expect("sparse and custom Jacobian kinds need State::with_solver");
         Self::with_solver(n, jtyp, mxordn, mxords, wm)
     }
 

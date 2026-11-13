@@ -30,7 +30,7 @@ impl MatrixStorage {
         match *kind {
             JacobianKind::DenseUser | JacobianKind::DenseFd => Some(Self::Dense),
             JacobianKind::BandedUser { ml, mu } | JacobianKind::BandedFd { ml, mu } => Some(Self::Banded { ml, mu }),
-            JacobianKind::Custom => None,
+            JacobianKind::SparseUser | JacobianKind::SparseFd | JacobianKind::Custom => None,
         }
     }
 }

@@ -31,6 +31,7 @@ use crate::interpolate::{StepData, intdy};
 use crate::linsol::{LinearSolver, MatrixSolver, builtin_solver, same_storage};
 use crate::norms::{ewset, invert_weights, vmnorm};
 use crate::options::{JacobianKind, Options, OptionsBuilder, Tol, Tolerance};
+use crate::sparse::SparsityPattern;
 use crate::state::State;
 use crate::stoda::{StepOutcome, stoda};
 use crate::system::OdeSystem;
@@ -266,7 +267,7 @@ impl<'a, S: OdeSystem> Lsoda<'a, S> {
         if opts.jacobian == JacobianKind::Custom && custom.is_none() {
             return Err(InputError::MissingLinearSolver.into());
         }
-        let wm = take_solver(&mut custom, opts.neq, &opts.jacobian);
+        let wm = take_solver(&mut custom, opts.neq, &opts.jacobian, system.sparsity_pattern());
         let mut st = State::with_solver(opts.neq, opts.jacobian, opts.mxordn, opts.mxords, wm);
         st.tn = t0;
         st.tsw = t0;
@@ -598,7 +599,7 @@ impl<'a, S: OdeSystem> Lsoda<'a, S> {
         let placeholder = Box::new(MatrixSolver::new(1, &JacobianKind::DenseFd).unwrap());
         let old = std::mem::replace(&mut self.st.wm, placeholder);
         release_solver(&mut self.custom, &self.st.wm_kind, old);
-        let wm = take_solver(&mut self.custom, n, &o.jacobian);
+        let wm = take_solver(&mut self.custom, n, &o.jacobian, self.system.sparsity_pattern());
         let mut st = State::with_solver(n, o.jacobian, o.mxordn, o.mxords, wm);
         st.hmxi = hmxi(o.hmax);
         st.hmin = o.hmin;
@@ -902,7 +903,7 @@ impl<'a, S: OdeSystem> Lsoda<'a, S> {
         if let Some(kind) = st.miter
             && !same_storage(&st.wm_kind, &kind)
         {
-            let wm = take_solver(&mut self.custom, st.n, &kind);
+            let wm = take_solver(&mut self.custom, st.n, &kind, self.system.sparsity_pattern());
             let old = std::mem::replace(&mut st.wm, wm);
             release_solver(&mut self.custom, &st.wm_kind, old);
             st.wm_kind = kind;
@@ -975,10 +976,16 @@ impl<'a, S: OdeSystem> Lsoda<'a, S> {
 
 /// A linear solver for `kind`: the user's (moved out of `custom`) for
 /// [`JacobianKind::Custom`], otherwise fresh built-in storage.
-fn take_solver(custom: &mut Option<Box<dyn LinearSolver>>, n: usize, kind: &JacobianKind) -> Box<dyn LinearSolver> {
-    match builtin_solver(n, kind) {
-        Some(wm) => wm,
-        None => custom.take().expect("custom linear solver checked when selected"),
+fn take_solver(
+    custom: &mut Option<Box<dyn LinearSolver>>,
+    n: usize,
+    kind: &JacobianKind,
+    pattern: Option<&SparsityPattern>,
+) -> Box<dyn LinearSolver> {
+    if *kind == JacobianKind::Custom {
+        custom.take().expect("custom linear solver checked when selected")
+    } else {
+        builtin_solver(n, kind, pattern).expect("Jacobian kind checked when selected")
     }
 }
 

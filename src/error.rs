@@ -31,6 +31,14 @@ pub enum InputError {
     MissingLinearSolver,
     /// A [`crate::sparse::SparsityPattern`] failed validation.
     InvalidSparsityPattern { reason: &'static str },
+    /// A sparse Jacobian kind was selected but the system declares no
+    /// sparsity pattern.
+    MissingSparsityPattern,
+    /// The system's sparsity pattern is not `NEQ x NEQ`.
+    SparsityPatternSize { expected: usize, got: usize },
+    /// A sparse Jacobian kind was selected but rsoda was built without the
+    /// `sparse` cargo feature.
+    SparseFeatureDisabled,
     /// `HMAX < 0` (or NaN).
     NegativeHmax(f64),
     /// `HMIN < 0` (or NaN).
@@ -86,6 +94,13 @@ impl fmt::Display for InputError {
                 write!(f, "user-supplied Jacobian requested but none provided")
             }
             Self::InvalidSparsityPattern { reason } => write!(f, "invalid sparsity pattern: {reason}"),
+            Self::MissingSparsityPattern => {
+                write!(f, "sparse Jacobian requested but the system has no sparsity pattern")
+            }
+            Self::SparsityPatternSize { expected, got } => {
+                write!(f, "sparsity pattern is {got} x {got}, expected NEQ = {expected}")
+            }
+            Self::SparseFeatureDisabled => write!(f, "sparse Jacobian requested but rsoda was built without `sparse`"),
             Self::MissingLinearSolver => {
                 write!(f, "custom linear solver requested but none provided")
             }

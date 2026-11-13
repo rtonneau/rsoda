@@ -19,6 +19,7 @@ use crate::error::LsodaError;
 use crate::options::JacobianKind;
 use crate::prja::{PrjaInput, PrjaOutput, prja};
 use crate::solsy::{IterationMatrix, MatrixStorage, SingularMatrix};
+use crate::sparse::SparsityPattern;
 use crate::system::OdeSystem;
 
 /// Forms, factors and solves the iteration matrix `P = I - h*el0*J` of the
@@ -109,10 +110,13 @@ impl LinearSolver for MatrixSolver {
 
 /// Whether a solver allocated for Jacobian kind `a` can serve kind `b`
 /// (DLSODA reuses `WM` unless the storage changes): the same dense or band
-/// storage, or both custom.
+/// storage, both sparse (the pattern is fixed by the system), or both
+/// custom.
 pub fn same_storage(a: &JacobianKind, b: &JacobianKind) -> bool {
+    use JacobianKind::{Custom, SparseFd, SparseUser};
     match (a, b) {
-        (JacobianKind::Custom, JacobianKind::Custom) => true,
+        (Custom, Custom) => true,
+        (SparseUser | SparseFd, SparseUser | SparseFd) => true,
         _ => {
             let sa = MatrixStorage::for_jacobian(a);
             sa.is_some() && sa == MatrixStorage::for_jacobian(b)
@@ -120,9 +124,28 @@ pub fn same_storage(a: &JacobianKind, b: &JacobianKind) -> bool {
     }
 }
 
-/// The built-in solver for `kind`, or `None` for [`JacobianKind::Custom`].
-pub fn builtin_solver(n: usize, kind: &JacobianKind) -> Option<Box<dyn LinearSolver>> {
-    MatrixSolver::new(n, kind).map(|s| Box::new(s) as Box<dyn LinearSolver>)
+/// The built-in solver for `kind`, or `None` for [`JacobianKind::Custom`]
+/// (and for the sparse kinds without the `sparse` feature or without a
+/// `pattern`). The sparse kinds use [`crate::SparseLu`] on `pattern`.
+pub fn builtin_solver(
+    n: usize,
+    kind: &JacobianKind,
+    pattern: Option<&SparsityPattern>,
+) -> Option<Box<dyn LinearSolver>> {
+    match kind {
+        JacobianKind::SparseUser | JacobianKind::SparseFd => sparse_solver(pattern),
+        _ => MatrixSolver::new(n, kind).map(|s| Box::new(s) as Box<dyn LinearSolver>),
+    }
+}
+
+#[cfg(feature = "sparse")]
+fn sparse_solver(pattern: Option<&SparsityPattern>) -> Option<Box<dyn LinearSolver>> {
+    pattern.map(|p| Box::new(crate::sparse_lu::SparseLu::new(p.clone())) as Box<dyn LinearSolver>)
+}
+
+#[cfg(not(feature = "sparse"))]
+fn sparse_solver(_pattern: Option<&SparsityPattern>) -> Option<Box<dyn LinearSolver>> {
+    None
 }
 
 /// Adapter turning any (possibly unsized) system into a sized one, so it can
@@ -141,6 +164,18 @@ impl<S: OdeSystem + ?Sized> OdeSystem for DynSystem<'_, S> {
     fn has_jac(&self) -> bool {
         self.0.has_jac()
     }
+
+    fn sparsity_pattern(&self) -> Option<&SparsityPattern> {
+        self.0.sparsity_pattern()
+    }
+
+    fn jac_sparse(&mut self, t: f64, y: &[f64], values: &mut [f64]) -> Result<(), LsodaError> {
+        self.0.jac_sparse(t, y, values)
+    }
+
+    fn has_jac_sparse(&self) -> bool {
+        self.0.has_jac_sparse()
+    }
 }
 
 #[cfg(test)]
@@ -156,7 +191,10 @@ mod tests {
         assert!(!same_storage(&DenseFd, &BandedFd { ml: 0, mu: 0 }));
         assert!(same_storage(&Custom, &Custom));
         assert!(!same_storage(&Custom, &DenseFd));
-        assert!(builtin_solver(3, &Custom).is_none());
-        assert!(builtin_solver(3, &DenseFd).is_some());
+        assert!(same_storage(&SparseUser, &SparseFd));
+        assert!(!same_storage(&SparseFd, &DenseFd));
+        assert!(builtin_solver(3, &Custom, None).is_none());
+        assert!(builtin_solver(3, &DenseFd, None).is_some());
+        assert!(builtin_solver(3, &SparseFd, None).is_none());
     }
 }

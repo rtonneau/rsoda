@@ -11,6 +11,8 @@ pub mod options;
 pub mod prja;
 pub mod solsy;
 pub mod sparse;
+#[cfg(feature = "sparse")]
+pub mod sparse_lu;
 pub mod state;
 pub mod stoda;
 pub mod system;
@@ -37,4 +39,6 @@ pub use options::{JacobianKind, Options, OptionsBuilder, Tol, Tolerance};
 pub use prja::{PrjaInput, PrjaOutput};
 pub use solsy::SingularMatrix;
 pub use sparse::{ColumnColoring, SparsityPattern};
+#[cfg(feature = "sparse")]
+pub use sparse_lu::SparseLu;
 pub use system::{ClosureSystem, OdeSystem};

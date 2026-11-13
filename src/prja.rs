@@ -206,7 +206,9 @@ pub fn prja<S: OdeSystem + ?Sized>(
             let info = dgbfa(&mut wm.a, meband, n, ml, mu, &mut wm.ipvt);
             Ok(PrjaOutput { pdnorm, singular: info != 0 })
         }
-        JacobianKind::Custom => unreachable!("custom kinds have no IterationMatrix"),
+        JacobianKind::SparseUser | JacobianKind::SparseFd | JacobianKind::Custom => {
+            unreachable!("only dense and band kinds have an IterationMatrix")
+        }
     }
 }
 
@@ -299,7 +301,7 @@ mod tests {
             JacobianKind::DenseUser | JacobianKind::BandedUser { .. } => 3,
             JacobianKind::DenseFd => 3 + n,
             JacobianKind::BandedFd { ml, mu } => 3 + (ml + mu + 1).min(n),
-            JacobianKind::Custom => unreachable!(),
+            _ => unreachable!(),
         };
         assert_eq!(nfe, expected_nfe, "{kind:?}");
         assert_eq!(y, s.y, "y must be restored");
