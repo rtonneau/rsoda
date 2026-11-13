@@ -331,8 +331,8 @@ pub fn stoda<S: OdeSystem + ?Sized>(st: &mut State, system: &mut S) -> Result<St
                 let mut r = 1.0_f64;
                 for j in 2..=st.l {
                     r *= rh;
-                    for i in col(j) {
-                        st.yh[i] *= r;
+                    for v in &mut st.yh[col(j)] {
+                        *v *= r;
                     }
                 }
                 st.h *= rh;
@@ -429,22 +429,31 @@ pub fn stoda<S: OdeSystem + ?Sized>(st: &mut State, system: &mut S) -> Result<St
                 if st.miter.is_none() {
                     // In the case of functional iteration, update Y directly
                     // from the result of the last function evaluation.
-                    for i in 0..n {
-                        st.savf[i] = st.h * st.savf[i] - st.yh[nyh + i];
-                        st.y[i] = st.savf[i] - st.acor[i];
+                    let h = st.h;
+                    for (((s, y), &yh2), &a) in
+                        st.savf[..n].iter_mut().zip(&mut st.y[..n]).zip(&st.yh[nyh..nyh + n]).zip(&st.acor[..n])
+                    {
+                        *s = h * *s - yh2;
+                        *y = *s - a;
                     }
                     del = vmnorm(&st.y[..n], &st.ewt);
-                    for i in 0..n {
-                        st.y[i] = st.yh[i] + st.el[0] * st.savf[i];
-                        st.acor[i] = st.savf[i];
+                    let el1 = st.el[0];
+                    for (((y, a), &yh1), &s) in
+                        st.y[..n].iter_mut().zip(&mut st.acor[..n]).zip(&st.yh[..n]).zip(&st.savf[..n])
+                    {
+                        *y = yh1 + el1 * s;
+                        *a = s;
                     }
                     L400
                 } else {
                     // 350: In the case of the chord method, compute the
                     // corrector error, and solve the linear system with that as
                     // right-hand side and P as coefficient matrix.
-                    for i in 0..n {
-                        st.y[i] = st.h * st.savf[i] - (st.yh[nyh + i] + st.acor[i]);
+                    let h = st.h;
+                    for (((y, &s), &yh2), &a) in
+                        st.y[..n].iter_mut().zip(&st.savf[..n]).zip(&st.yh[nyh..nyh + n]).zip(&st.acor[..n])
+                    {
+                        *y = h * s - (yh2 + a);
                     }
                     #[cfg(feature = "timing")]
                     let started = std::time::Instant::now();
@@ -464,9 +473,10 @@ pub fn stoda<S: OdeSystem + ?Sized>(st: &mut State, system: &mut S) -> Result<St
                         L410
                     } else {
                         del = vmnorm(&st.y[..n], &st.ewt);
-                        for i in 0..n {
-                            st.acor[i] += st.y[i];
-                            st.y[i] = st.yh[i] + st.el[0] * st.acor[i];
+                        let el1 = st.el[0];
+                        for ((a, y), &yh1) in st.acor[..n].iter_mut().zip(&mut st.y[..n]).zip(&st.yh[..n]) {
+                            *a += *y;
+                            *y = yh1 + el1 * *a;
                         }
                         L400
                     }
@@ -600,9 +610,8 @@ pub fn stoda<S: OdeSystem + ?Sized>(st: &mut State, system: &mut S) -> Result<St
                     st.mused = Some(st.meth);
                     for j in 1..=st.l {
                         let elj = st.el[j - 1];
-                        let base = (j - 1) * nyh;
-                        for i in 0..n {
-                            st.yh[base + i] += elj * st.acor[i];
+                        for (v, &a) in st.yh[col(j)].iter_mut().zip(&st.acor[..n]) {
+                            *v += elj * a;
                         }
                     }
                     st.icount -= 1;
@@ -959,11 +968,24 @@ pub fn stoda<S: OdeSystem + ?Sized>(st: &mut State, system: &mut S) -> Result<St
 /// Predicts by multiplying the history array by the Pascal triangle matrix
 /// (loops 210/215 of DSTODA, `YH1(I) = YH1(I) + YH1(I+NYH)`).
 fn predict(yh: &mut [f64], nqnyh: usize, nyh: usize, nq: usize) {
-    let mut i1 = nqnyh;
-    for _ in 0..nq {
-        i1 -= nyh;
-        for i in i1..nqnyh {
-            yh[i] += yh[i + nyh];
+    pascal_sweeps(yh, nqnyh, nyh, nq, |a, b| *a += b);
+}
+
+/// The `nq` sweeps of [`predict`] and [`retract`]: sweep `k` (1-based)
+/// applies `op(yh(i), yh(i + nyh))` for `i` in `nqnyh - k*nyh..nqnyh`, in
+/// ascending `i`. Each read `yh(i + nyh)` sees the value from before the
+/// sweep (it is written later in the same sweep), so a sweep is a column
+/// update `col(c) op= col(c + 1)` for ascending columns; this is how it is
+/// run here, on column slices.
+#[inline(always)]
+fn pascal_sweeps(yh: &mut [f64], nqnyh: usize, nyh: usize, nq: usize, op: impl Fn(&mut f64, f64)) {
+    let last = nqnyh / nyh; // columns 0..last (0-based) are updated
+    for k in 1..=nq {
+        for c in (last - k)..last {
+            let (lo, hi) = yh.split_at_mut((c + 1) * nyh);
+            for (a, &b) in lo[c * nyh..].iter_mut().zip(&hi[..nyh]) {
+                op(a, b);
+            }
         }
     }
 }
@@ -971,13 +993,7 @@ fn predict(yh: &mut [f64], nqnyh: usize, nyh: usize, nq: usize) {
 /// Retracts the history array to its values before prediction (loops
 /// 440/445 and 510/515 of DSTODA, `YH1(I) = YH1(I) - YH1(I+NYH)`).
 fn retract(yh: &mut [f64], nqnyh: usize, nyh: usize, nq: usize) {
-    let mut i1 = nqnyh;
-    for _ in 0..nq {
-        i1 -= nyh;
-        for i in i1..nqnyh {
-            yh[i] -= yh[i + nyh];
-        }
-    }
+    pascal_sweeps(yh, nqnyh, nyh, nq, |a, b| *a -= b);
 }
 
 #[cfg(test)]
@@ -1155,6 +1171,40 @@ mod tests {
 
     fn decay() -> ClosureSystem<'static> {
         closure(|_t, y, f| f[0] = -y[0])
+    }
+
+    /// The indexed DSTODA sweeps that [`predict`] and [`retract`] replace.
+    fn indexed_sweeps(yh: &mut [f64], nqnyh: usize, nyh: usize, nq: usize, sign: f64) {
+        let mut i1 = nqnyh;
+        for _ in 0..nq {
+            i1 -= nyh;
+            for i in i1..nqnyh {
+                yh[i] += sign * yh[i + nyh];
+            }
+        }
+    }
+
+    #[test]
+    fn predict_and_retract_match_the_indexed_sweeps_bit_for_bit() {
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        for nyh in [1, 3, 22] {
+            for nq in 1..=12 {
+                let yh0: Vec<f64> = (0..(nq + 1) * nyh + 5)
+                    .map(|_| {
+                        seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
+                        ((seed >> 11) as f64 / (1u64 << 53) as f64 - 0.5) * 1e3
+                    })
+                    .collect();
+                let bits = |v: &[f64]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+                let (mut a, mut b) = (yh0.clone(), yh0.clone());
+                predict(&mut a, nq * nyh, nyh, nq);
+                indexed_sweeps(&mut b, nq * nyh, nyh, nq, 1.0);
+                assert_eq!(bits(&a), bits(&b), "predict nyh {nyh} nq {nq}");
+                retract(&mut a, nq * nyh, nyh, nq);
+                indexed_sweeps(&mut b, nq * nyh, nyh, nq, -1.0);
+                assert_eq!(bits(&a), bits(&b), "retract nyh {nyh} nq {nq}");
+            }
+        }
     }
 
     #[test]
