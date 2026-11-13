@@ -187,10 +187,9 @@ fn banded_kinds_match_dense() -> R {
     let tol = Tolerance::scalar(1e-10, 1e-12);
     let mut reference = solver(chain(false), N, tol.clone(), JacobianKind::DenseFd, 1e-3, &y0);
     reference.integrate(2.0)?;
-    for (jac, with_jac) in [
-        (JacobianKind::BandedFd { ml: 1, mu: 1 }, false),
-        (JacobianKind::BandedUser { ml: 1, mu: 1 }, true),
-    ] {
+    for (jac, with_jac) in
+        [(JacobianKind::BandedFd { ml: 1, mu: 1 }, false), (JacobianKind::BandedUser { ml: 1, mu: 1 }, true)]
+    {
         let mut s = solver(chain(with_jac), N, tol.clone(), jac, 1e-3, &y0);
         s.integrate(2.0)?;
         for i in 0..N {
@@ -224,14 +223,7 @@ fn van_der_pol_stiff_switches_to_bdf_and_is_consistent() -> R {
     let t8 = Tolerance::scalar(1e-8, 1e-8);
     let mut fd = solver(van_der_pol(mu), 2, t8.clone(), JacobianKind::DenseFd, 1e-6, &y0);
     let mut user = solver(van_der_pol(mu), 2, t8, JacobianKind::DenseUser, 1e-6, &y0);
-    let mut tight = solver(
-        van_der_pol(mu),
-        2,
-        Tolerance::scalar(1e-11, 1e-11),
-        JacobianKind::DenseUser,
-        1e-6,
-        &y0,
-    );
+    let mut tight = solver(van_der_pol(mu), 2, Tolerance::scalar(1e-11, 1e-11), JacobianKind::DenseUser, 1e-6, &y0);
     for t in [100.0, 500.0, 1000.0, 2000.0] {
         fd.integrate(t)?;
         user.integrate(t)?;
@@ -300,10 +292,7 @@ fn run_decay(rate: f64) -> Result<Vec<f64>, LsodaError> {
         f[0] = -rate * y[0];
         Ok(())
     });
-    let opts = OptionsBuilder::new(1)
-        .tolerance(Tolerance::scalar(1e-10, 1e-12))
-        .h0(1e-4)
-        .build(&sys)?;
+    let opts = OptionsBuilder::new(1).tolerance(Tolerance::scalar(1e-10, 1e-12)).h0(1e-4).build(&sys)?;
     let mut s = Lsoda::new(sys, opts, 0.0, &[1.0])?;
     let mut out = Vec::new();
     for k in 1..=20 {

@@ -1,6 +1,20 @@
 [package]
 name = "rsoda"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [dependencies]
+faer = { version = "0.24", default-features = false, features = ["std", "sparse-linalg"], optional = true }
+
+[features]
+# Sparse LU linear solver (SparseLu) for the sparse Jacobian kinds, built on faer.
+sparse = ["dep:faer"]
+
+# The port keeps the Fortran's index loops, its NaN-aware negated
+# comparisons (`!(x >= 0.0)`), its LINPACK size checks and its argument
+# lists, so these style lints are allowed crate-wide.
+[lints.clippy]
+needless_range_loop = "allow"
+neg_cmp_op_on_partial_ord = "allow"
+int_plus_one = "allow"
+too_many_arguments = "allow"

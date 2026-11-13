@@ -88,7 +88,7 @@ pub fn prja<S: OdeSystem + ?Sized>(
     nje: &mut usize,
 ) -> Result<PrjaOutput, LsodaError> {
     let n = wm.n;
-    assert_eq!(MatrixStorage::for_jacobian(&kind), wm.storage, "Jacobian kind and storage differ");
+    assert_eq!(MatrixStorage::for_jacobian(&kind), Some(wm.storage), "Jacobian kind and storage differ");
     assert!(y.len() >= n && ftem.len() >= n);
     assert!(input.yh1.len() >= n && input.ewt.len() >= n && input.savf.len() >= n);
 
@@ -206,6 +206,9 @@ pub fn prja<S: OdeSystem + ?Sized>(
             let info = dgbfa(&mut wm.a, meband, n, ml, mu, &mut wm.ipvt);
             Ok(PrjaOutput { pdnorm, singular: info != 0 })
         }
+        JacobianKind::SparseUser | JacobianKind::SparseFd | JacobianKind::Custom => {
+            unreachable!("only dense and band kinds have an IterationMatrix")
+        }
     }
 }
 
@@ -284,7 +287,7 @@ mod tests {
             JacobianKind::BandedUser { .. } => sys.with_jac(band_jac(n)),
             _ => sys,
         };
-        let mut wm = IterationMatrix::new(n, MatrixStorage::for_jacobian(&kind));
+        let mut wm = IterationMatrix::new(n, MatrixStorage::for_jacobian(&kind).unwrap());
         let mut y = s.y.clone();
         let mut ftem = vec![0.0; n];
         let (mut nfe, mut nje) = (3usize, 7usize);
@@ -298,15 +301,15 @@ mod tests {
             JacobianKind::DenseUser | JacobianKind::BandedUser { .. } => 3,
             JacobianKind::DenseFd => 3 + n,
             JacobianKind::BandedFd { ml, mu } => 3 + (ml + mu + 1).min(n),
+            _ => unreachable!(),
         };
         assert_eq!(nfe, expected_nfe, "{kind:?}");
         assert_eq!(y, s.y, "y must be restored");
         assert_eq!(wm.hl0, hl0);
 
         // PDNORM = weighted norm of J.
-        let jn = (0..n)
-            .map(|i| s.ewt[i] * (0..n).map(|j| jac_elem(i, j).abs() / s.ewt[j]).sum::<f64>())
-            .fold(0.0, f64::max);
+        let jn =
+            (0..n).map(|i| s.ewt[i] * (0..n).map(|j| jac_elem(i, j).abs() / s.ewt[j]).sum::<f64>()).fold(0.0, f64::max);
         assert!((out.pdnorm - jn).abs() <= tol * jn, "{kind:?}: pdnorm {} vs {jn}", out.pdnorm);
 
         // The factors solve P x = b with P = I - hl0*J.
@@ -358,18 +361,15 @@ mod tests {
         let (mut y, mut ftem) = ([2.0], [0.0]);
         let input = PrjaInput { tn: 0.0, h: 0.5, el0: 0.5, yh1: &[2.0], ewt: &[0.5], savf: &[0.0] };
         let (mut nfe, mut nje) = (0, 0);
-        let out = prja(&mut sys, JacobianKind::DenseUser, &input, &mut y, &mut ftem, &mut wm, &mut nfe, &mut nje)
-            .unwrap();
+        let out =
+            prja(&mut sys, JacobianKind::DenseUser, &input, &mut y, &mut ftem, &mut wm, &mut nfe, &mut nje).unwrap();
         assert_eq!(wm.a[0], 1.0 + 0.25 * 4.0);
         // pdnorm = |(-hl0)*j| * w / w / |hl0| = 4.
         assert_eq!(out.pdnorm, 4.0);
     }
 
     /// Records the perturbation `y - y0` seen at each rhs call.
-    fn recording_system<'a>(
-        y0: Vec<f64>,
-        log: &'a std::cell::RefCell<Vec<Vec<f64>>>,
-    ) -> ClosureSystem<'a> {
+    fn recording_system<'a>(y0: Vec<f64>, log: &'a std::cell::RefCell<Vec<Vec<f64>>>) -> ClosureSystem<'a> {
         ClosureSystem::new(move |_t, y: &[f64], f: &mut [f64]| {
             log.borrow_mut().push(y.iter().zip(&y0).map(|(a, b)| a - b).collect());
             for i in 0..y.len() {
@@ -443,7 +443,7 @@ mod tests {
         let log = std::cell::RefCell::new(Vec::new());
         let mut sys = recording_system(y0.clone(), &log);
         let kind = JacobianKind::BandedFd { ml, mu };
-        let mut wm = IterationMatrix::new(n, MatrixStorage::for_jacobian(&kind));
+        let mut wm = IterationMatrix::new(n, MatrixStorage::for_jacobian(&kind).unwrap());
         let mut y = y0.clone();
         let mut ftem = vec![0.0; n];
         let input = PrjaInput { tn: 0.0, h, el0, yh1: &y0, ewt: &ewt, savf: &savf };
@@ -482,9 +482,8 @@ mod tests {
         ] {
             let e1 = err.clone();
             let e2 = err.clone();
-            let mut sys = ClosureSystem::new(move |_, _, _| Err(e1.clone()))
-                .with_jac(move |_, _, _| Err(e2.clone()));
-            let mut wm = IterationMatrix::new(n, MatrixStorage::for_jacobian(&kind));
+            let mut sys = ClosureSystem::new(move |_, _, _| Err(e1.clone())).with_jac(move |_, _, _| Err(e2.clone()));
+            let mut wm = IterationMatrix::new(n, MatrixStorage::for_jacobian(&kind).unwrap());
             let mut y = s.y.clone();
             let mut ftem = vec![0.0; n];
             let input = PrjaInput { tn: 0.0, h: 0.1, el0: 1.0, yh1: &s.y, ewt: &s.ewt, savf: &s.savf };
@@ -527,7 +526,7 @@ mod tests {
                 }
                 Ok(())
             });
-            let mut wm = IterationMatrix::new(n, MatrixStorage::for_jacobian(&kind));
+            let mut wm = IterationMatrix::new(n, MatrixStorage::for_jacobian(&kind).unwrap());
             let mut y = y0.clone();
             let mut ftem = vec![0.0; n];
             // Powers of two keep the finite differences exact.

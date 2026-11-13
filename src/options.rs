@@ -70,7 +70,8 @@ impl Tolerance {
     }
 }
 
-/// How the Jacobian is obtained and stored (Fortran `JT` 1, 2, 4, 5).
+/// How the Jacobian is obtained and stored (Fortran `JT` 1, 2, 4, 5), or a
+/// user-supplied linear solver.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JacobianKind {
     /// `JT = 1`: user-supplied dense.
@@ -81,12 +82,23 @@ pub enum JacobianKind {
     BandedUser { ml: usize, mu: usize },
     /// `JT = 5`: finite-difference banded.
     BandedFd { ml: usize, mu: usize },
+    /// User-supplied sparse Jacobian ([`OdeSystem::jac_sparse`]) on the
+    /// system's [`OdeSystem::sparsity_pattern`], with the sparse LU solver
+    /// (cargo feature `sparse`).
+    SparseUser,
+    /// Finite-difference sparse Jacobian on the system's
+    /// [`OdeSystem::sparsity_pattern`] (one `f` evaluation per column
+    /// group), with the sparse LU solver (cargo feature `sparse`).
+    SparseFd,
+    /// A user-supplied [`crate::LinearSolver`] owns the iteration matrix and
+    /// computes the Jacobian itself (see [`crate::Lsoda::with_linear_solver`]).
+    Custom,
 }
 
 impl JacobianKind {
     /// Whether the user must supply the Jacobian.
     pub fn is_user(&self) -> bool {
-        matches!(self, Self::DenseUser | Self::BandedUser { .. })
+        matches!(self, Self::DenseUser | Self::BandedUser { .. } | Self::SparseUser)
     }
 }
 
@@ -201,9 +213,7 @@ impl OptionsBuilder {
             return Err(InputError::NeqNotPositive.into());
         }
         self.tolerance.validate(neq)?;
-        if let JacobianKind::BandedUser { ml, mu } | JacobianKind::BandedFd { ml, mu } =
-            self.jacobian
-        {
+        if let JacobianKind::BandedUser { ml, mu } | JacobianKind::BandedFd { ml, mu } = self.jacobian {
             if ml >= neq {
                 return Err(InputError::IllegalMl { ml, neq }.into());
             }
@@ -211,8 +221,23 @@ impl OptionsBuilder {
                 return Err(InputError::IllegalMu { mu, neq }.into());
             }
         }
-        if self.jacobian.is_user() && !system.has_jac() {
-            return Err(InputError::MissingJacobian.into());
+        match self.jacobian {
+            JacobianKind::SparseUser | JacobianKind::SparseFd => {
+                if !cfg!(feature = "sparse") {
+                    return Err(InputError::SparseFeatureDisabled.into());
+                }
+                let Some(p) = system.sparsity_pattern() else {
+                    return Err(InputError::MissingSparsityPattern.into());
+                };
+                if p.n() != neq {
+                    return Err(InputError::SparsityPatternSize { expected: neq, got: p.n() }.into());
+                }
+                if self.jacobian == JacobianKind::SparseUser && !system.has_jac_sparse() {
+                    return Err(InputError::MissingJacobian.into());
+                }
+            }
+            kind if kind.is_user() && !system.has_jac() => return Err(InputError::MissingJacobian.into()),
+            _ => {}
         }
         if self.h0.is_nan() {
             return Err(InputError::InvalidH0(self.h0).into());
@@ -265,13 +290,7 @@ mod options_tests {
 
     #[test]
     fn zero_means_default_and_orders_capped() {
-        let o = OptionsBuilder::new(2)
-            .mxstep(0)
-            .mxhnil(0)
-            .mxordn(100)
-            .mxords(0)
-            .build(&sys())
-            .unwrap();
+        let o = OptionsBuilder::new(2).mxstep(0).mxhnil(0).mxordn(100).mxords(0).build(&sys()).unwrap();
         assert_eq!((o.mxstep, o.mxhnil, o.mxordn, o.mxords), (10000, 10, 12, 5));
         let o = OptionsBuilder::new(2).mxordn(4).mxords(3).build(&sys()).unwrap();
         assert_eq!((o.mxordn, o.mxords), (4, 3));
@@ -308,18 +327,11 @@ mod options_tests {
 
     #[test]
     fn rejects_bad_bandwidths() {
-        let r = OptionsBuilder::new(3)
-            .jacobian(JacobianKind::BandedFd { ml: 3, mu: 0 })
-            .build(&sys());
+        let r = OptionsBuilder::new(3).jacobian(JacobianKind::BandedFd { ml: 3, mu: 0 }).build(&sys());
         assert_eq!(illegal(r), InputError::IllegalMl { ml: 3, neq: 3 });
-        let r = OptionsBuilder::new(3)
-            .jacobian(JacobianKind::BandedFd { ml: 1, mu: 5 })
-            .build(&sys());
+        let r = OptionsBuilder::new(3).jacobian(JacobianKind::BandedFd { ml: 1, mu: 5 }).build(&sys());
         assert_eq!(illegal(r), InputError::IllegalMu { mu: 5, neq: 3 });
-        assert!(OptionsBuilder::new(3)
-            .jacobian(JacobianKind::BandedFd { ml: 2, mu: 2 })
-            .build(&sys())
-            .is_ok());
+        assert!(OptionsBuilder::new(3).jacobian(JacobianKind::BandedFd { ml: 2, mu: 2 }).build(&sys()).is_ok());
     }
 
     #[test]
@@ -338,5 +350,16 @@ mod options_tests {
         assert_eq!(illegal(r), InputError::NegativeHmax(-1.0));
         let r = OptionsBuilder::new(2).hmin(-0.5).build(&sys());
         assert_eq!(illegal(r), InputError::NegativeHmin(-0.5));
+    }
+
+    #[cfg(not(feature = "sparse"))]
+    #[test]
+    fn options_sparse_kinds_need_the_feature() {
+        let sys = crate::system::ClosureSystem::new(|_t, _y: &[f64], _f: &mut [f64]| Ok(()))
+            .with_sparsity(crate::sparse::SparsityPattern::dense(2).unwrap());
+        for kind in [JacobianKind::SparseUser, JacobianKind::SparseFd] {
+            let r = OptionsBuilder::new(2).jacobian(kind).build(&sys);
+            assert_eq!(r, Err(InputError::SparseFeatureDisabled.into()));
+        }
     }
 }

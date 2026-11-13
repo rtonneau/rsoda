@@ -14,15 +14,15 @@
 
 use crate::coefficients::{Elco, Method, Tesco};
 use crate::consts::{MORD_NONSTIFF, MORD_STIFF};
+use crate::linsol::{LinearSolver, builtin_solver};
 use crate::options::JacobianKind;
-use crate::solsy::{IterationMatrix, MatrixStorage};
 
 /// The LSODA common data and work arrays (`/DLS001/`, `/DLSA01/`, `RWORK`,
 /// `IWORK`).
 ///
 /// [`crate::stoda::stoda`] reads and updates the stepper fields; the fields
 /// marked "driver" are maintained by DLSODA and never changed by DSTODA.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub struct State {
     // ----- /DLS001/: reals -------------------------------------------------
     /// `CONIT = 0.5 / (NQ + 2)`, used in the corrector convergence test.
@@ -165,9 +165,12 @@ pub struct State {
     /// `ACOR`: accumulated corrections; after a successful step, the
     /// estimated local error (length `n`).
     pub acor: Vec<f64>,
-    /// `WM`/`IWM`: the iteration matrix `P = I - h*el0*J` and its pivots,
-    /// stored for `jtyp`.
-    pub wm: IterationMatrix,
+    /// `WM`/`IWM`: the linear solver owning the iteration matrix
+    /// `P = I - h*el0*J` (its factors and pivots).
+    pub wm: Box<dyn LinearSolver>,
+    /// The Jacobian kind [`State::wm`] was allocated for (driver): DLSODA
+    /// reallocates `WM` only when the storage of `MITER` changes.
+    pub wm_kind: JacobianKind,
 }
 
 impl State {
@@ -181,7 +184,18 @@ impl State {
     /// `HU = 0`, `NQU = 0`, `MUSED = 0`, `NQ = 1`. `HMIN` and `HMXI` are 0
     /// (no bounds). The driver still has to load `tn`, `h`, the first two
     /// columns of `yh` and `ewt` before the first step.
+    ///
+    /// # Panics
+    ///
+    /// For the sparse kinds and [`JacobianKind::Custom`], whose solver needs
+    /// more than `n`: use [`State::with_solver`].
     pub fn new(n: usize, jtyp: JacobianKind, mxordn: usize, mxords: usize) -> Self {
+        let wm = builtin_solver(n, &jtyp, None).expect("sparse and custom Jacobian kinds need State::with_solver");
+        Self::with_solver(n, jtyp, mxordn, mxords, wm)
+    }
+
+    /// [`State::new`] with the linear solver `wm`, allocated for `jtyp`.
+    pub fn with_solver(n: usize, jtyp: JacobianKind, mxordn: usize, mxords: usize, wm: Box<dyn LinearSolver>) -> Self {
         assert!(n > 0, "n must be positive");
         assert!((1..=MORD_NONSTIFF).contains(&mxordn), "mxordn must be in 1..=12");
         assert!((1..=MORD_STIFF).contains(&mxords), "mxords must be in 1..=5");
@@ -247,7 +261,8 @@ impl State {
             ewt: vec![0.0; n],
             savf: vec![0.0; n],
             acor: vec![0.0; n],
-            wm: IterationMatrix::new(n, MatrixStorage::for_jacobian(&jtyp)),
+            wm,
+            wm_kind: jtyp,
         }
     }
 
@@ -293,7 +308,7 @@ mod tests {
         assert_eq!((st.meth, st.miter, st.maxord, st.jstart), (Method::Adams, None, 12, 0));
         assert_eq!((st.nst, st.nfe, st.nje, st.nqu, st.mused), (0, 0, 0, 0, None));
         assert_eq!(st.yh.len(), 3 * 13);
-        assert_eq!(st.wm.storage, MatrixStorage::Banded { ml: 1, mu: 0 });
+        assert_eq!(st.wm_kind, JacobianKind::BandedFd { ml: 1, mu: 0 });
         // History storage covers the larger of the two maximum orders.
         let st = State::new(2, JacobianKind::DenseFd, 3, 5);
         assert_eq!(st.yh.len(), 2 * 6);

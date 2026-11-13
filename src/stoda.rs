@@ -26,16 +26,15 @@
 use crate::coefficients::{Method, cfode};
 use crate::consts::UROUND;
 use crate::error::LsodaError;
+use crate::linsol::DynSystem;
 use crate::norms::vmnorm;
-use crate::prja::{PrjaInput, prja};
+use crate::prja::PrjaInput;
 use crate::state::State;
 use crate::system::OdeSystem;
 
 /// `SM1(12)`: step-size factors bounding `h * |J|` inside the stability
 /// region of the Adams method of each order (`DATA SM1`).
-pub const SM1: [f64; 12] = [
-    0.5, 0.575, 0.55, 0.45, 0.35, 0.25, 0.20, 0.15, 0.10, 0.075, 0.050, 0.025,
-];
+pub const SM1: [f64; 12] = [0.5, 0.575, 0.55, 0.45, 0.35, 0.25, 0.20, 0.15, 0.10, 0.075, 0.050, 0.025];
 
 /// Outcome of a [`stoda`] call (the Fortran `KFLAG`, also left in
 /// [`State::kflag`]).
@@ -392,13 +391,12 @@ pub fn stoda<S: OdeSystem + ?Sized>(st: &mut State, system: &mut S) -> Result<St
                             ewt: &st.ewt,
                             savf: &st.savf,
                         };
-                        let out = prja(
-                            system,
-                            kind,
+                        let out = st.wm.prepare(
+                            &kind,
+                            &mut DynSystem(&mut *system),
                             &input,
                             &mut st.y,
                             &mut st.acor,
-                            &mut st.wm,
                             &mut st.nfe,
                             &mut st.nje,
                         )?;
@@ -1237,7 +1235,8 @@ mod tests {
     #[test]
     fn stoda_convergence_failure_at_hmin_returns_kflag_minus_2() {
         // y' = -y with h = 10: functional iteration diverges (rate 10).
-        let mut d = Driver::new(decay(), JacobianKind::DenseFd, &[1.0], 0.0, 100.0, Tolerance::scalar(1e-6, 1e-6), 10.0);
+        let mut d =
+            Driver::new(decay(), JacobianKind::DenseFd, &[1.0], 0.0, 100.0, Tolerance::scalar(1e-6, 1e-6), 10.0);
         d.st.hmin = 10.0;
         assert_eq!(d.step(), StepOutcome::ConvergenceFailed);
         let st = &d.st;
@@ -1248,7 +1247,8 @@ mod tests {
 
     #[test]
     fn stoda_convergence_failures_stop_at_mxncf() {
-        let mut d = Driver::new(decay(), JacobianKind::DenseFd, &[1.0], 0.0, 100.0, Tolerance::scalar(1e-6, 1e-6), 10.0);
+        let mut d =
+            Driver::new(decay(), JacobianKind::DenseFd, &[1.0], 0.0, 100.0, Tolerance::scalar(1e-6, 1e-6), 10.0);
         d.st.mxncf = 1;
         assert_eq!(d.step(), StepOutcome::ConvergenceFailed);
         assert_eq!((d.st.nfe, d.st.tn, d.st.h), (3, 0.0, 10.0));
@@ -1256,7 +1256,8 @@ mod tests {
 
     #[test]
     fn stoda_convergence_failure_retries_with_quarter_step() {
-        let mut d = Driver::new(decay(), JacobianKind::DenseFd, &[1.0], 0.0, 100.0, Tolerance::scalar(1e-6, 1e-6), 10.0);
+        let mut d =
+            Driver::new(decay(), JacobianKind::DenseFd, &[1.0], 0.0, 100.0, Tolerance::scalar(1e-6, 1e-6), 10.0);
         assert_eq!(d.step(), StepOutcome::Success);
         let st = &d.st;
         assert_eq!((st.icf, st.nst, st.rmax), (2, 1, 2.0));
@@ -1477,7 +1478,9 @@ mod tests {
                 assert_ne!(st.meth, meth);
                 assert_eq!((st.icount, st.pdlast, st.jstart), (20, 0.0, -1));
                 match st.meth {
-                    Method::Bdf => assert_eq!((st.miter, st.maxord), (Some(JacobianKind::DenseFd), 5)),
+                    Method::Bdf => {
+                        assert_eq!((st.miter, st.maxord), (Some(JacobianKind::DenseFd), 5))
+                    }
                     Method::Adams => assert_eq!((st.miter, st.maxord), (None, 12)),
                 }
             }

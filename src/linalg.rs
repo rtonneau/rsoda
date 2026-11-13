@@ -168,14 +168,7 @@ pub fn dgesl(a: &[f64], lda: usize, n: usize, ipvt: &[usize], b: &mut [f64], tra
 ///
 /// Returns `0` on success, or the 1-based index `k` of the last zero pivot
 /// (the factorization is still completed, but cannot be used to solve).
-pub fn dgbfa(
-    abd: &mut [f64],
-    lda: usize,
-    n: usize,
-    ml: usize,
-    mu: usize,
-    ipvt: &mut [usize],
-) -> usize {
+pub fn dgbfa(abd: &mut [f64], lda: usize, n: usize, ml: usize, mu: usize, ipvt: &mut [usize]) -> usize {
     let m = ml + mu + 1;
     assert!(lda >= 2 * ml + mu + 1);
     assert!(ipvt.len() >= n);
@@ -261,16 +254,7 @@ pub fn dgbfa(
 ///
 /// `b` (length >= `n`) holds the right-hand side on entry and the solution on
 /// return. Only call this when [`dgbfa`] returned `0`.
-pub fn dgbsl(
-    abd: &[f64],
-    lda: usize,
-    n: usize,
-    ml: usize,
-    mu: usize,
-    ipvt: &[usize],
-    b: &mut [f64],
-    transpose: bool,
-) {
+pub fn dgbsl(abd: &[f64], lda: usize, n: usize, ml: usize, mu: usize, ipvt: &[usize], b: &mut [f64], transpose: bool) {
     let m = mu + ml + 1;
     assert!(lda >= 2 * ml + mu + 1);
     assert!(ipvt.len() >= n);
@@ -355,16 +339,12 @@ mod tests {
 
     /// `y = A x` for a dense row-major reference matrix.
     fn matvec(rows: &[Vec<f64>], x: &[f64]) -> Vec<f64> {
-        rows.iter()
-            .map(|r| r.iter().zip(x).map(|(a, b)| a * b).sum())
-            .collect()
+        rows.iter().map(|r| r.iter().zip(x).map(|(a, b)| a * b).sum()).collect()
     }
 
     fn matvec_t(rows: &[Vec<f64>], x: &[f64]) -> Vec<f64> {
         let n = rows.len();
-        (0..n)
-            .map(|j| (0..n).map(|i| rows[i][j] * x[i]).sum())
-            .collect()
+        (0..n).map(|j| (0..n).map(|i| rows[i][j] * x[i]).sum()).collect()
     }
 
     /// Pack a full matrix (only entries inside the band) into LINPACK band storage.
@@ -485,17 +465,9 @@ mod tests {
 
     #[test]
     fn linalg_banded_matches_dense() {
-        for &(n, ml, mu) in &[
-            (1, 0, 0),
-            (2, 1, 0),
-            (2, 0, 1),
-            (5, 1, 1),
-            (6, 2, 1),
-            (7, 1, 3),
-            (8, 3, 3),
-            (10, 2, 2),
-            (4, 3, 3),
-        ] {
+        for &(n, ml, mu) in
+            &[(1, 0, 0), (2, 1, 0), (2, 0, 1), (5, 1, 1), (6, 2, 1), (7, 1, 3), (8, 3, 3), (10, 2, 2), (4, 3, 3)]
+        {
             let full = band_matrix(n, ml, mu, (n * 100 + ml * 10 + mu) as u64);
             let lda = 2 * ml + mu + 1;
             let x: Vec<f64> = (0..n).map(|i| 1.0 + 0.5 * i as f64 - (i % 3) as f64).collect();

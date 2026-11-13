@@ -26,6 +26,19 @@ pub enum InputError {
     IllegalMu { mu: usize, neq: usize },
     /// A user-supplied Jacobian kind was selected but the system provides none.
     MissingJacobian,
+    /// [`crate::JacobianKind::Custom`] was selected but no linear solver was
+    /// given ([`crate::Lsoda::with_linear_solver`]).
+    MissingLinearSolver,
+    /// A [`crate::sparse::SparsityPattern`] failed validation.
+    InvalidSparsityPattern { reason: &'static str },
+    /// A sparse Jacobian kind was selected but the system declares no
+    /// sparsity pattern.
+    MissingSparsityPattern,
+    /// The system's sparsity pattern is not `NEQ x NEQ`.
+    SparsityPatternSize { expected: usize, got: usize },
+    /// A sparse Jacobian kind was selected but rsoda was built without the
+    /// `sparse` cargo feature.
+    SparseFeatureDisabled,
     /// `HMAX < 0` (or NaN).
     NegativeHmax(f64),
     /// `HMIN < 0` (or NaN).
@@ -80,16 +93,26 @@ impl fmt::Display for InputError {
             Self::MissingJacobian => {
                 write!(f, "user-supplied Jacobian requested but none provided")
             }
+            Self::InvalidSparsityPattern { reason } => write!(f, "invalid sparsity pattern: {reason}"),
+            Self::MissingSparsityPattern => {
+                write!(f, "sparse Jacobian requested but the system has no sparsity pattern")
+            }
+            Self::SparsityPatternSize { expected, got } => {
+                write!(f, "sparsity pattern is {got} x {got}, expected NEQ = {expected}")
+            }
+            Self::SparseFeatureDisabled => write!(f, "sparse Jacobian requested but rsoda was built without `sparse`"),
+            Self::MissingLinearSolver => {
+                write!(f, "custom linear solver requested but none provided")
+            }
             Self::NegativeHmax(v) => write!(f, "HMAX = {v} < 0"),
             Self::NegativeHmin(v) => write!(f, "HMIN = {v} < 0.0"),
             Self::InvalidH0(v) => write!(f, "H0 = {v} is not a number"),
             Self::YLength { expected, got } => {
                 write!(f, "y has length {got}, expected NEQ = {expected}")
             }
-            Self::H0Direction { t, tout, h0 } => write!(
-                f,
-                "TOUT (={tout}) behind T (={t}); integration direction is given by H0 (={h0})"
-            ),
+            Self::H0Direction { t, tout, h0 } => {
+                write!(f, "TOUT (={tout}) behind T (={t}); integration direction is given by H0 (={h0})")
+            }
             Self::ErrorWeightNonPositive { index, value } => {
                 write!(f, "EWT({index}) is {value} <= 0.0")
             }
@@ -105,19 +128,17 @@ impl fmt::Display for InputError {
             Self::TcritBehindTout { tcrit, tout } => {
                 write!(f, "ITASK = 4 or 5 and TCRIT (={tcrit}) behind TOUT (={tout})")
             }
-            Self::TooMuchAccuracyAtStart { tolsf } => write!(
-                f,
-                "at start of problem, too much accuracy requested for precision of machine (tolsf = {tolsf})"
-            ),
+            Self::TooMuchAccuracyAtStart { tolsf } => {
+                write!(f, "at start of problem, too much accuracy requested for precision of machine (tolsf = {tolsf})")
+            }
             Self::Interpolation(e) => write!(f, "trouble in DINTDY: {e}"),
             Self::NoStepTaken => write!(f, "no step taken yet: there is no history to interpolate"),
             Self::DkyLength { expected, got } => {
                 write!(f, "dky output has length {got}, expected at least NEQ = {expected}")
             }
-            Self::Halted => write!(
-                f,
-                "integration halted by a callback error in the middle of a step; it cannot be continued"
-            ),
+            Self::Halted => {
+                write!(f, "integration halted by a callback error in the middle of a step; it cannot be continued")
+            }
         }
     }
 }
@@ -151,23 +172,19 @@ pub enum LsodaError {
 impl fmt::Display for LsodaError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::MaxStepsExceeded { t, mxstep } => write!(
-                f,
-                "at t = {t}, {mxstep} steps taken on this call before reaching tout"
-            ),
-            Self::TooMuchAccuracy { t, tolsf } => write!(
-                f,
-                "at t = {t}, too much accuracy requested for machine precision (tolsf = {tolsf})"
-            ),
+            Self::MaxStepsExceeded { t, mxstep } => {
+                write!(f, "at t = {t}, {mxstep} steps taken on this call before reaching tout")
+            }
+            Self::TooMuchAccuracy { t, tolsf } => {
+                write!(f, "at t = {t}, too much accuracy requested for machine precision (tolsf = {tolsf})")
+            }
             Self::IllegalInput(e) => write!(f, "illegal input: {e}"),
-            Self::ErrorTestFailed { t, h, imxer } => write!(
-                f,
-                "at t = {t}, h = {h}: error test failed repeatedly or with |h| = hmin (component {imxer})"
-            ),
-            Self::ConvergenceFailed { t, h, imxer } => write!(
-                f,
-                "at t = {t}, h = {h}: convergence failed repeatedly or with |h| = hmin (component {imxer})"
-            ),
+            Self::ErrorTestFailed { t, h, imxer } => {
+                write!(f, "at t = {t}, h = {h}: error test failed repeatedly or with |h| = hmin (component {imxer})")
+            }
+            Self::ConvergenceFailed { t, h, imxer } => {
+                write!(f, "at t = {t}, h = {h}: convergence failed repeatedly or with |h| = hmin (component {imxer})")
+            }
             Self::ErrorWeightZero { t, component } => {
                 write!(f, "at t = {t}, error weight for component {component} became zero")
             }

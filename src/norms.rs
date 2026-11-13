@@ -102,6 +102,29 @@ pub fn invert_weights(ewt: &mut [f64]) -> Result<(), usize> {
 /// Running maximum for the norm loops (`AN = MAX(AN, x)`): `b` replaces `a`
 /// only when `b > a`.
 #[inline(always)]
+/// [`fnorm`] of a sparse `n x n` matrix in compressed sparse column form
+/// (`col_ptr`, `row_idx`, `values`): `max_i ( w(i) * sum_j |a(i,j)| / w(j) )`
+/// over the stored entries.
+///
+/// Each row sum accumulates its terms in increasing `j`, as [`fnorm`] does,
+/// so the result equals [`fnorm`] of the densified matrix bit for bit.
+/// `rowsum` (length `>= n`) is scratch space.
+pub fn csc_fnorm(n: usize, col_ptr: &[usize], row_idx: &[usize], values: &[f64], w: &[f64], rowsum: &mut [f64]) -> f64 {
+    assert!(col_ptr.len() == n + 1 && w.len() >= n && rowsum.len() >= n);
+    let rowsum = &mut rowsum[..n];
+    rowsum.fill(0.0);
+    for j in 0..n {
+        for k in col_ptr[j]..col_ptr[j + 1] {
+            rowsum[row_idx[k]] += values[k].abs() / w[j];
+        }
+    }
+    let mut an = 0.0_f64;
+    for i in 0..n {
+        an = fortran_max(an, rowsum[i] * w[i]);
+    }
+    an
+}
+
 fn fortran_max(a: f64, b: f64) -> f64 {
     if b > a { b } else { a }
 }
@@ -121,9 +144,7 @@ mod tests {
 
     /// Reference: `max_i w(i) * sum_j |a(i,j)| / w(j)` on a dense `n x n`.
     fn dense_reference(n: usize, get: impl Fn(usize, usize) -> f64, w: &[f64]) -> f64 {
-        (0..n)
-            .map(|i| w[i] * (0..n).map(|j| get(i, j).abs() / w[j]).sum::<f64>())
-            .fold(0.0, f64::max)
+        (0..n).map(|i| w[i] * (0..n).map(|j| get(i, j).abs() / w[j]).sum::<f64>()).fold(0.0, f64::max)
     }
 
     #[test]
@@ -213,5 +234,25 @@ mod tests {
         let mut ewt = [2.0, 0.0, -1.0];
         assert_eq!(invert_weights(&mut ewt), Err(1));
         assert_eq!(ewt[0], 0.5);
+    }
+
+    #[test]
+    fn csc_fnorm_equals_fnorm_of_densified() {
+        let n = 4;
+        // Column-major dense matrix with some zeros.
+        let a = [1.0, 0.0, -3.0, 0.0, 0.0, 5.0, 0.0, 0.25, -2.0, 0.0, 8.0, 0.0, 0.0, 0.0, 0.5, -7.0];
+        let w = [1.0, 2.0, 0.25, 3.0];
+        let (mut col_ptr, mut row_idx, mut values) = (vec![0], Vec::new(), Vec::new());
+        for j in 0..n {
+            for i in 0..n {
+                if a[i + j * n] != 0.0 {
+                    row_idx.push(i);
+                    values.push(a[i + j * n]);
+                }
+            }
+            col_ptr.push(row_idx.len());
+        }
+        let mut scratch = vec![f64::NAN; n];
+        assert_eq!(csc_fnorm(n, &col_ptr, &row_idx, &values, &w, &mut scratch), fnorm(n, &a, &w));
     }
 }
