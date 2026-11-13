@@ -29,6 +29,8 @@ pub enum InputError {
     /// [`crate::JacobianKind::Custom`] was selected but no linear solver was
     /// given ([`crate::Lsoda::with_linear_solver`]).
     MissingLinearSolver,
+    /// A [`crate::sparse::SparsityPattern`] failed validation.
+    InvalidSparsityPattern { reason: &'static str },
     /// `HMAX < 0` (or NaN).
     NegativeHmax(f64),
     /// `HMIN < 0` (or NaN).
@@ -83,6 +85,7 @@ impl fmt::Display for InputError {
             Self::MissingJacobian => {
                 write!(f, "user-supplied Jacobian requested but none provided")
             }
+            Self::InvalidSparsityPattern { reason } => write!(f, "invalid sparsity pattern: {reason}"),
             Self::MissingLinearSolver => {
                 write!(f, "custom linear solver requested but none provided")
             }
