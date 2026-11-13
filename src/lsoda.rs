@@ -50,6 +50,37 @@ pub struct MethodSwitch {
     pub nst: usize,
 }
 
+/// The Nordsieck history array `YH` of the last step, with its step data
+/// (returned by [`Lsoda::nordsieck`]).
+///
+/// `yh` is column-major with leading dimension `nyh`: column `j` (0-based)
+/// holds `h^j y^(j)(tn) / j!` and its element `(i, j)` is at
+/// `yh[i + j * nyh]`. After a step the array is in the state DLSODA needs
+/// for the next one: scaled to `h` (`HCUR`) with `nq + 1` (`NQCUR + 1`)
+/// valid columns. When the order was lowered (`nq < nqu`), column `nqu`
+/// still holds the last step's highest-order term, scaled to `hu` (`HU`).
+/// The array has room for more columns than are valid; the extra ones are
+/// unspecified.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Nordsieck<'a> {
+    /// The history array (`RWORK(21)` on), column-major.
+    pub yh: &'a [f64],
+    /// Leading dimension of `yh` (`NYH`, at least `n`).
+    pub nyh: usize,
+    /// Number of equations (`N`).
+    pub n: usize,
+    /// `NQCUR` (`IWORK(15)`): the order to be attempted next.
+    pub nq: usize,
+    /// `NQU` (`IWORK(14)`): the order last used successfully.
+    pub nqu: usize,
+    /// `TCUR` (`RWORK(13)`): the mesh point the history is centred on.
+    pub tn: f64,
+    /// `HCUR` (`RWORK(12)`): the step size `yh` is scaled to.
+    pub h: f64,
+    /// `HU` (`RWORK(11)`): the step size last used successfully.
+    pub hu: f64,
+}
+
 /// A non-fatal message DLSODA would print through `XERRWD`. Delivered to the
 /// hook set with [`Lsoda::on_warning`].
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -418,6 +449,45 @@ impl<'a, S: OdeSystem> Lsoda<'a, S> {
     /// from [`Lsoda::mused`] only right after a method switch.
     pub fn mcur(&self) -> Method {
         self.st.meth
+    }
+
+    // ----- Dense output (DINTDY) --------------------------------------------
+
+    /// The `k`-th derivative of the interpolating polynomial at `t`, written
+    /// into `out[..n]` (`DINTDY`, the user-callable routine of ODEPACK).
+    ///
+    /// `t` must lie in the last step taken, `[tcur - hu, tcur]` (up to a
+    /// roundoff allowance), and `k` must not exceed [`Lsoda::nqcur`]. Nothing
+    /// else changes: [`Lsoda::t`], [`Lsoda::y`] and the solver state stay as
+    /// they were. `dky(t, 0, ..)` gives the values [`Lsoda::integrate`]
+    /// returns for a `t` inside the last step.
+    ///
+    /// # Errors
+    ///
+    /// [`LsodaError::IllegalInput`] with [`InputError::NoStepTaken`] before
+    /// the first step (or after a callback error stopped a step),
+    /// [`InputError::DkyLength`] if `out` has fewer than `neq` components,
+    /// and [`InputError::Interpolation`] for an illegal `t` or `k`; `out` is
+    /// then left untouched.
+    pub fn dky(&self, t: f64, k: usize, out: &mut [f64]) -> Result<(), LsodaError> {
+        if !self.init || self.halted {
+            return Err(InputError::NoStepTaken.into());
+        }
+        let st = &self.st;
+        if out.len() < st.n {
+            return Err(InputError::DkyLength { expected: st.n, got: out.len() }.into());
+        }
+        let step = StepData { nq: st.nq, tn: st.tn, h: st.h, hu: st.hu };
+        intdy(t, k, &st.yh, st.nyh, st.n, &step, out).map_err(InputError::Interpolation)?;
+        Ok(())
+    }
+
+    /// A read-only view of the Nordsieck history array and the step data
+    /// that go with it, as left by the last step (for callers that build
+    /// their own dense output). See [`Nordsieck`].
+    pub fn nordsieck(&self) -> Nordsieck<'_> {
+        let st = &self.st;
+        Nordsieck { yh: &st.yh, nyh: st.nyh, n: st.n, nq: st.nq, nqu: st.nqu, tn: st.tn, h: st.h, hu: st.hu }
     }
 
     /// The options in effect.
@@ -1676,5 +1746,80 @@ mod tests {
         .join()
         .unwrap();
         assert!((y - (-1.0_f64).exp()).abs() < 1e-5);
+    }
+
+    // ----- Dense output -----------------------------------------------------
+
+    #[test]
+    fn dky_before_the_first_step_is_an_error() {
+        let solver = lsoda(decay(), 0.0, &[1.0], |b| b.tolerance(tight()));
+        let mut out = [7.0];
+        assert_eq!(illegal(solver.dky(0.0, 0, &mut out)), InputError::NoStepTaken);
+        assert_eq!(out, [7.0]);
+    }
+
+    #[test]
+    fn dky_at_the_mesh_point_is_the_step_output() {
+        let mut solver = rober(JacobianKind::DenseUser);
+        let mut out = [0.0; 3];
+        for _ in 0..50 {
+            let t = solver.step(4.0e10).unwrap();
+            solver.dky(t, 0, &mut out).unwrap();
+            assert_eq!(out, solver.y(), "t = {t}");
+        }
+    }
+
+    #[test]
+    fn dky_inside_the_last_step_matches_integrate_and_changes_nothing() {
+        let mut solver = rober(JacobianKind::DenseUser);
+        let mut a = [0.0; 3];
+        let mut dydt = [0.0; 3];
+        for _ in 0..50 {
+            let t = solver.step(4.0e10).unwrap();
+            let y_step = solver.y().to_vec();
+            let (nst, nfe) = (solver.nst(), solver.nfe());
+            let tin = t - 0.37 * solver.hu();
+            solver.dky(tin, 0, &mut a).unwrap();
+            solver.dky(tin, 1, &mut dydt).unwrap();
+            assert!(dydt.iter().all(|d| d.is_finite()));
+            assert_eq!((solver.t(), solver.y()), (t, y_step.as_slice()));
+            assert_eq!((solver.nst(), solver.nfe()), (nst, nfe));
+            assert_eq!(solver.integrate(tin).unwrap(), tin);
+            assert_eq!(solver.y(), a, "t = {tin}");
+        }
+    }
+
+    #[test]
+    fn dky_rejects_illegal_t_k_and_short_output() {
+        let mut solver = lsoda(decay(), 0.0, &[1.0], |b| b.tolerance(tight()));
+        let t = solver.step(1.0).unwrap();
+        let mut out = [7.0];
+        let e = illegal(solver.dky(t + 1.0, 0, &mut out));
+        assert!(matches!(e, InputError::Interpolation(IntdyError::IllegalT { .. })), "{e:?}");
+        let k = solver.nqcur() + 1;
+        let e = illegal(solver.dky(t, k, &mut out));
+        assert!(matches!(e, InputError::Interpolation(IntdyError::IllegalK { .. })), "{e:?}");
+        assert_eq!(out, [7.0]);
+        let e = illegal(solver.dky(t, 0, &mut []));
+        assert_eq!(e, InputError::DkyLength { expected: 1, got: 0 });
+        let mut long = [7.0, 7.0];
+        solver.dky(t, 0, &mut long).unwrap();
+        assert_eq!(long, [solver.y()[0], 7.0]);
+    }
+
+    #[test]
+    fn nordsieck_view_agrees_with_the_accessors() {
+        let mut solver = rober(JacobianKind::DenseUser);
+        let mut lowered = false;
+        for _ in 0..200 {
+            let t = solver.step(4.0e10).unwrap();
+            let v = solver.nordsieck();
+            assert_eq!((v.n, v.nq, v.nqu), (3, solver.nqcur(), solver.nqu()));
+            assert_eq!((v.tn, v.h, v.hu), (solver.tcur(), solver.hcur(), solver.hu()));
+            assert!(v.nyh >= v.n && v.yh.len() >= (v.nq.max(v.nqu) + 1) * v.nyh);
+            assert_eq!(&v.yh[..3], solver.y(), "t = {t}");
+            lowered |= v.nq < v.nqu;
+        }
+        assert!(lowered, "the Robertson run should lower the order at least once");
     }
 }

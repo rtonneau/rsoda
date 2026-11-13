@@ -24,7 +24,11 @@ println!("y(1) = {}", solver.y()[0]);
 
 DLSODA's `ITASK` values 1 to 5 map to `integrate`, `step`, `advance_past`,
 `integrate_tcrit` and `step_tcrit`. Jacobians can be dense or banded, user
-supplied or finite-difference (`JacobianKind`). See the rustdoc of `Lsoda`.
+supplied or finite-difference (`JacobianKind`).
+`dky` is DINTDY: it interpolates the solution or its derivatives inside the
+last step without stepping. `nordsieck` gives read-only access to the history
+array and its step data, for callers that build their own dense output. See
+the rustdoc of `Lsoda`.
 
 ## Tests
 
