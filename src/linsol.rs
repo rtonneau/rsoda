@@ -126,7 +126,7 @@ pub fn same_storage(a: &JacobianKind, b: &JacobianKind) -> bool {
 
 /// The built-in solver for `kind`, or `None` for [`JacobianKind::Custom`]
 /// (and for the sparse kinds without the `sparse` feature or without a
-/// `pattern`). The sparse kinds use [`crate::SparseLu`] on `pattern`.
+/// `pattern`). The sparse kinds use `SparseLu` (feature `sparse`) on `pattern`.
 pub fn builtin_solver(
     n: usize,
     kind: &JacobianKind,

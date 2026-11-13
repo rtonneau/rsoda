@@ -298,3 +298,28 @@ fn sparse_kinds_validate_the_system() {
     assert_eq!(illegal(&wrong, JacobianKind::SparseFd), InputError::SparsityPatternSize { expected: 3, got: 4 });
     assert!(OptionsBuilder::new(3).jacobian(JacobianKind::SparseFd).build(&fd_only).is_ok());
 }
+
+/// The README example.
+#[test]
+fn readme_sparse_example() {
+    // y0' = -y0 + y1, y1' = -1000 y1: J has entries (0,0), (0,1), (1,1).
+    let pattern = SparsityPattern::from_entries(2, [(0, 0), (0, 1), (1, 1)]).unwrap();
+    let p = pattern.clone();
+    let system = ClosureSystem::new(|_t, y, f| {
+        f[0] = -y[0] + y[1];
+        f[1] = -1000.0 * y[1];
+        Ok(())
+    })
+    .with_sparse_jac(pattern, move |_t, _y, values| {
+        values[p.find(0, 0).unwrap()] = -1.0;
+        values[p.find(0, 1).unwrap()] = 1.0;
+        values[p.find(1, 1).unwrap()] = -1000.0;
+        Ok(())
+    });
+    let options = OptionsBuilder::new(2).jacobian(JacobianKind::SparseUser).build(&system).unwrap();
+    let mut solver = Lsoda::new(system, options, 0.0, &[1.0, 1.0]).unwrap();
+    solver.integrate(1.0).unwrap();
+    // y0 = e^-t + (e^-t - e^-1000t)/999, y1 = e^-1000t.
+    let e = (-1.0f64).exp();
+    assert!((solver.y()[0] - (e + e / 999.0)).abs() < 1e-4);
+}
