@@ -201,9 +201,7 @@ impl OptionsBuilder {
             return Err(InputError::NeqNotPositive.into());
         }
         self.tolerance.validate(neq)?;
-        if let JacobianKind::BandedUser { ml, mu } | JacobianKind::BandedFd { ml, mu } =
-            self.jacobian
-        {
+        if let JacobianKind::BandedUser { ml, mu } | JacobianKind::BandedFd { ml, mu } = self.jacobian {
             if ml >= neq {
                 return Err(InputError::IllegalMl { ml, neq }.into());
             }
@@ -265,13 +263,7 @@ mod options_tests {
 
     #[test]
     fn zero_means_default_and_orders_capped() {
-        let o = OptionsBuilder::new(2)
-            .mxstep(0)
-            .mxhnil(0)
-            .mxordn(100)
-            .mxords(0)
-            .build(&sys())
-            .unwrap();
+        let o = OptionsBuilder::new(2).mxstep(0).mxhnil(0).mxordn(100).mxords(0).build(&sys()).unwrap();
         assert_eq!((o.mxstep, o.mxhnil, o.mxordn, o.mxords), (10000, 10, 12, 5));
         let o = OptionsBuilder::new(2).mxordn(4).mxords(3).build(&sys()).unwrap();
         assert_eq!((o.mxordn, o.mxords), (4, 3));
@@ -308,18 +300,11 @@ mod options_tests {
 
     #[test]
     fn rejects_bad_bandwidths() {
-        let r = OptionsBuilder::new(3)
-            .jacobian(JacobianKind::BandedFd { ml: 3, mu: 0 })
-            .build(&sys());
+        let r = OptionsBuilder::new(3).jacobian(JacobianKind::BandedFd { ml: 3, mu: 0 }).build(&sys());
         assert_eq!(illegal(r), InputError::IllegalMl { ml: 3, neq: 3 });
-        let r = OptionsBuilder::new(3)
-            .jacobian(JacobianKind::BandedFd { ml: 1, mu: 5 })
-            .build(&sys());
+        let r = OptionsBuilder::new(3).jacobian(JacobianKind::BandedFd { ml: 1, mu: 5 }).build(&sys());
         assert_eq!(illegal(r), InputError::IllegalMu { mu: 5, neq: 3 });
-        assert!(OptionsBuilder::new(3)
-            .jacobian(JacobianKind::BandedFd { ml: 2, mu: 2 })
-            .build(&sys())
-            .is_ok());
+        assert!(OptionsBuilder::new(3).jacobian(JacobianKind::BandedFd { ml: 2, mu: 2 }).build(&sys()).is_ok());
     }
 
     #[test]

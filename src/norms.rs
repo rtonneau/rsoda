@@ -121,9 +121,7 @@ mod tests {
 
     /// Reference: `max_i w(i) * sum_j |a(i,j)| / w(j)` on a dense `n x n`.
     fn dense_reference(n: usize, get: impl Fn(usize, usize) -> f64, w: &[f64]) -> f64 {
-        (0..n)
-            .map(|i| w[i] * (0..n).map(|j| get(i, j).abs() / w[j]).sum::<f64>())
-            .fold(0.0, f64::max)
+        (0..n).map(|i| w[i] * (0..n).map(|j| get(i, j).abs() / w[j]).sum::<f64>()).fold(0.0, f64::max)
     }
 
     #[test]

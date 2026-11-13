@@ -190,11 +190,8 @@ fn matches_reference_golden_files() {
 
         let sys = (case.system)(case.user);
         let jac = if case.user { JacobianKind::DenseUser } else { JacobianKind::DenseFd };
-        let opts = OptionsBuilder::new(case.neq)
-            .tolerance(Tolerance::scalar(RTOL, ATOL))
-            .jacobian(jac)
-            .build(&sys)
-            .unwrap();
+        let opts =
+            OptionsBuilder::new(case.neq).tolerance(Tolerance::scalar(RTOL, ATOL)).jacobian(jac).build(&sys).unwrap();
         let mut s = Lsoda::new(sys, opts, 0.0, case.y0).unwrap();
 
         for (k, row) in rows.iter().enumerate() {

@@ -828,12 +828,7 @@ impl<'a, S: OdeSystem> Lsoda<'a, S> {
         if self.nhnil > self.opts.mxhnil {
             return;
         }
-        let w = Warning::NegligibleStep {
-            t: self.st.tn,
-            h: self.st.h,
-            count: self.nhnil,
-            mxhnil: self.opts.mxhnil,
-        };
+        let w = Warning::NegligibleStep { t: self.st.tn, h: self.st.h, count: self.nhnil, mxhnil: self.opts.mxhnil };
         if let Some(hook) = self.on_warning.as_mut() {
             hook(&w);
         }
@@ -1702,8 +1697,7 @@ mod tests {
             let warnings = Mutex::new(Vec::new());
             let switches = Mutex::new(Vec::new());
             let mut s = lsoda(robertson(), 0.0, &[1.0, 0.0, 0.0], |b| b.tolerance(rober_tol()).ixpr(ixpr));
-            s.on_warning(|w| warnings.lock().unwrap().push(*w))
-                .on_method_switch(|e| switches.lock().unwrap().push(*e));
+            s.on_warning(|w| warnings.lock().unwrap().push(*w)).on_method_switch(|e| switches.lock().unwrap().push(*e));
             s.integrate(0.4).unwrap();
             let tsw = s.tsw();
             drop(s);
@@ -1722,7 +1716,10 @@ mod tests {
         s.integrate(0.4).unwrap();
         drop(s);
         let warnings = warnings.into_inner().unwrap();
-        assert!(matches!(warnings[..], [Warning::MethodSwitch(MethodSwitch { method: Method::Bdf, .. })]), "{warnings:?}");
+        assert!(
+            matches!(warnings[..], [Warning::MethodSwitch(MethodSwitch { method: Method::Bdf, .. })]),
+            "{warnings:?}"
+        );
     }
 
     #[test]

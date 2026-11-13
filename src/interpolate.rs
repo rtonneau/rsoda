@@ -46,10 +46,9 @@ impl fmt::Display for IntdyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::IllegalK { k, nq } => write!(f, "DINTDY- K (={k}) illegal (current order {nq})"),
-            Self::IllegalT { t, tp, tn } => write!(
-                f,
-                "DINTDY- T (={t}) illegal: T not in interval TCUR - HU (= {tp}) to TCUR (={tn})"
-            ),
+            Self::IllegalT { t, tp, tn } => {
+                write!(f, "DINTDY- T (={t}) illegal: T not in interval TCUR - HU (= {tp}) to TCUR (={tn})")
+            }
         }
     }
 }
@@ -158,11 +157,8 @@ mod tests {
 
     #[test]
     fn interpolate_reproduces_polynomials_and_derivatives() {
-        let coef = vec![
-            vec![1.0, -2.0, 0.5, 3.0, -0.25],
-            vec![0.0, 1.0, 0.0, 0.0, 0.0],
-            vec![-3.0, 0.75, 2.0, -1.0, 4.0],
-        ];
+        let coef =
+            vec![vec![1.0, -2.0, 0.5, 3.0, -0.25], vec![0.0, 1.0, 0.0, 0.0, 0.0], vec![-3.0, 0.75, 2.0, -1.0, 4.0]];
         let (nq, tn, h, hu) = (4usize, 2.0, 0.3, 0.25);
         let yh = nordsieck(&coef, nq, h);
         let step = StepData { nq, tn, h, hu };

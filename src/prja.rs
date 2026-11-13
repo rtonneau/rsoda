@@ -304,9 +304,8 @@ mod tests {
         assert_eq!(wm.hl0, hl0);
 
         // PDNORM = weighted norm of J.
-        let jn = (0..n)
-            .map(|i| s.ewt[i] * (0..n).map(|j| jac_elem(i, j).abs() / s.ewt[j]).sum::<f64>())
-            .fold(0.0, f64::max);
+        let jn =
+            (0..n).map(|i| s.ewt[i] * (0..n).map(|j| jac_elem(i, j).abs() / s.ewt[j]).sum::<f64>()).fold(0.0, f64::max);
         assert!((out.pdnorm - jn).abs() <= tol * jn, "{kind:?}: pdnorm {} vs {jn}", out.pdnorm);
 
         // The factors solve P x = b with P = I - hl0*J.
@@ -358,18 +357,15 @@ mod tests {
         let (mut y, mut ftem) = ([2.0], [0.0]);
         let input = PrjaInput { tn: 0.0, h: 0.5, el0: 0.5, yh1: &[2.0], ewt: &[0.5], savf: &[0.0] };
         let (mut nfe, mut nje) = (0, 0);
-        let out = prja(&mut sys, JacobianKind::DenseUser, &input, &mut y, &mut ftem, &mut wm, &mut nfe, &mut nje)
-            .unwrap();
+        let out =
+            prja(&mut sys, JacobianKind::DenseUser, &input, &mut y, &mut ftem, &mut wm, &mut nfe, &mut nje).unwrap();
         assert_eq!(wm.a[0], 1.0 + 0.25 * 4.0);
         // pdnorm = |(-hl0)*j| * w / w / |hl0| = 4.
         assert_eq!(out.pdnorm, 4.0);
     }
 
     /// Records the perturbation `y - y0` seen at each rhs call.
-    fn recording_system<'a>(
-        y0: Vec<f64>,
-        log: &'a std::cell::RefCell<Vec<Vec<f64>>>,
-    ) -> ClosureSystem<'a> {
+    fn recording_system<'a>(y0: Vec<f64>, log: &'a std::cell::RefCell<Vec<Vec<f64>>>) -> ClosureSystem<'a> {
         ClosureSystem::new(move |_t, y: &[f64], f: &mut [f64]| {
             log.borrow_mut().push(y.iter().zip(&y0).map(|(a, b)| a - b).collect());
             for i in 0..y.len() {
@@ -482,8 +478,7 @@ mod tests {
         ] {
             let e1 = err.clone();
             let e2 = err.clone();
-            let mut sys = ClosureSystem::new(move |_, _, _| Err(e1.clone()))
-                .with_jac(move |_, _, _| Err(e2.clone()));
+            let mut sys = ClosureSystem::new(move |_, _, _| Err(e1.clone())).with_jac(move |_, _, _| Err(e2.clone()));
             let mut wm = IterationMatrix::new(n, MatrixStorage::for_jacobian(&kind));
             let mut y = s.y.clone();
             let mut ftem = vec![0.0; n];

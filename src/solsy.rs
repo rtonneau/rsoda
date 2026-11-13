@@ -28,9 +28,7 @@ impl MatrixStorage {
     pub fn for_jacobian(kind: &JacobianKind) -> Self {
         match *kind {
             JacobianKind::DenseUser | JacobianKind::DenseFd => Self::Dense,
-            JacobianKind::BandedUser { ml, mu } | JacobianKind::BandedFd { ml, mu } => {
-                Self::Banded { ml, mu }
-            }
+            JacobianKind::BandedUser { ml, mu } | JacobianKind::BandedFd { ml, mu } => Self::Banded { ml, mu },
         }
     }
 }

@@ -86,10 +86,9 @@ impl fmt::Display for InputError {
             Self::YLength { expected, got } => {
                 write!(f, "y has length {got}, expected NEQ = {expected}")
             }
-            Self::H0Direction { t, tout, h0 } => write!(
-                f,
-                "TOUT (={tout}) behind T (={t}); integration direction is given by H0 (={h0})"
-            ),
+            Self::H0Direction { t, tout, h0 } => {
+                write!(f, "TOUT (={tout}) behind T (={t}); integration direction is given by H0 (={h0})")
+            }
             Self::ErrorWeightNonPositive { index, value } => {
                 write!(f, "EWT({index}) is {value} <= 0.0")
             }
@@ -105,19 +104,17 @@ impl fmt::Display for InputError {
             Self::TcritBehindTout { tcrit, tout } => {
                 write!(f, "ITASK = 4 or 5 and TCRIT (={tcrit}) behind TOUT (={tout})")
             }
-            Self::TooMuchAccuracyAtStart { tolsf } => write!(
-                f,
-                "at start of problem, too much accuracy requested for precision of machine (tolsf = {tolsf})"
-            ),
+            Self::TooMuchAccuracyAtStart { tolsf } => {
+                write!(f, "at start of problem, too much accuracy requested for precision of machine (tolsf = {tolsf})")
+            }
             Self::Interpolation(e) => write!(f, "trouble in DINTDY: {e}"),
             Self::NoStepTaken => write!(f, "no step taken yet: there is no history to interpolate"),
             Self::DkyLength { expected, got } => {
                 write!(f, "dky output has length {got}, expected at least NEQ = {expected}")
             }
-            Self::Halted => write!(
-                f,
-                "integration halted by a callback error in the middle of a step; it cannot be continued"
-            ),
+            Self::Halted => {
+                write!(f, "integration halted by a callback error in the middle of a step; it cannot be continued")
+            }
         }
     }
 }
@@ -151,23 +148,19 @@ pub enum LsodaError {
 impl fmt::Display for LsodaError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::MaxStepsExceeded { t, mxstep } => write!(
-                f,
-                "at t = {t}, {mxstep} steps taken on this call before reaching tout"
-            ),
-            Self::TooMuchAccuracy { t, tolsf } => write!(
-                f,
-                "at t = {t}, too much accuracy requested for machine precision (tolsf = {tolsf})"
-            ),
+            Self::MaxStepsExceeded { t, mxstep } => {
+                write!(f, "at t = {t}, {mxstep} steps taken on this call before reaching tout")
+            }
+            Self::TooMuchAccuracy { t, tolsf } => {
+                write!(f, "at t = {t}, too much accuracy requested for machine precision (tolsf = {tolsf})")
+            }
             Self::IllegalInput(e) => write!(f, "illegal input: {e}"),
-            Self::ErrorTestFailed { t, h, imxer } => write!(
-                f,
-                "at t = {t}, h = {h}: error test failed repeatedly or with |h| = hmin (component {imxer})"
-            ),
-            Self::ConvergenceFailed { t, h, imxer } => write!(
-                f,
-                "at t = {t}, h = {h}: convergence failed repeatedly or with |h| = hmin (component {imxer})"
-            ),
+            Self::ErrorTestFailed { t, h, imxer } => {
+                write!(f, "at t = {t}, h = {h}: error test failed repeatedly or with |h| = hmin (component {imxer})")
+            }
+            Self::ConvergenceFailed { t, h, imxer } => {
+                write!(f, "at t = {t}, h = {h}: convergence failed repeatedly or with |h| = hmin (component {imxer})")
+            }
             Self::ErrorWeightZero { t, component } => {
                 write!(f, "at t = {t}, error weight for component {component} became zero")
             }
