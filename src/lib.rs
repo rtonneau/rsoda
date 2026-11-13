@@ -16,6 +16,8 @@ pub mod sparse_lu;
 pub mod state;
 pub mod stoda;
 pub mod system;
+#[cfg(feature = "timing")]
+pub mod timing;
 
 /// Machine constants, matching the values DLSODA obtains from `DUMACH`.
 pub mod consts {
@@ -42,3 +44,5 @@ pub use sparse::{ColumnColoring, SparsityPattern};
 #[cfg(feature = "sparse")]
 pub use sparse_lu::SparseLu;
 pub use system::{ClosureSystem, OdeSystem};
+#[cfg(feature = "timing")]
+pub use timing::TimingStats;

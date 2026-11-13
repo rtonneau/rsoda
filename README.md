@@ -77,11 +77,20 @@ let mut solver = Lsoda::new(system, options, 0.0, &[1.0, 1.0]).unwrap();
 solver.integrate(1.0).unwrap();
 ```
 
+## Profiling
+
+The `timing` cargo feature counts and times the linear solver's calls:
+`Lsoda::timing()` returns a `TimingStats` with the number and total wall time
+of `LinearSolver::prepare` calls (Jacobian evaluation, assembly of
+`P = I - h*el0*J` and factorization) and of `LinearSolver::solve` calls. Without
+the feature no timer is taken, and the results are the same either way.
+
 ## Tests
 
 ```
 cargo test
 cargo test --features sparse
+cargo test --features timing
 ```
 
 * `tests/analytic.rs` checks the solver against analytic or high-accuracy
@@ -94,6 +103,8 @@ cargo test --features sparse
   passes.
 * `tests/sparse.rs` (feature `sparse`) checks the sparse kinds against the
   banded and dense ones on a 2D Brusselator grid and the Robertson problem.
+* `tests/timing.rs` (feature `timing`) checks the call counts against the
+  solver's counters.
 
 ## Regenerating the Golden files
 

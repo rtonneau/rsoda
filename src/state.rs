@@ -171,6 +171,9 @@ pub struct State {
     /// The Jacobian kind [`State::wm`] was allocated for (driver): DLSODA
     /// reallocates `WM` only when the storage of `MITER` changes.
     pub wm_kind: JacobianKind,
+    /// Linear-solver call counts and times (feature `timing`).
+    #[cfg(feature = "timing")]
+    pub timing: crate::timing::TimingStats,
 }
 
 impl State {
@@ -263,6 +266,8 @@ impl State {
             acor: vec![0.0; n],
             wm,
             wm_kind: jtyp,
+            #[cfg(feature = "timing")]
+            timing: crate::timing::TimingStats::default(),
         }
     }
 

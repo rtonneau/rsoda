@@ -391,6 +391,8 @@ pub fn stoda<S: OdeSystem + ?Sized>(st: &mut State, system: &mut S) -> Result<St
                             ewt: &st.ewt,
                             savf: &st.savf,
                         };
+                        #[cfg(feature = "timing")]
+                        let started = std::time::Instant::now();
                         let out = st.wm.prepare(
                             &kind,
                             &mut DynSystem(&mut *system),
@@ -399,7 +401,13 @@ pub fn stoda<S: OdeSystem + ?Sized>(st: &mut State, system: &mut S) -> Result<St
                             &mut st.acor,
                             &mut st.nfe,
                             &mut st.nje,
-                        )?;
+                        );
+                        #[cfg(feature = "timing")]
+                        {
+                            st.timing.n_prepare += 1;
+                            st.timing.t_prepare += started.elapsed();
+                        }
+                        let out = out?;
                         // DPRJA's outputs IERPJ, JCUR = 1 and PDNORM.
                         st.ierpj = out.ierpj();
                         st.jcur = true;
@@ -438,7 +446,15 @@ pub fn stoda<S: OdeSystem + ?Sized>(st: &mut State, system: &mut S) -> Result<St
                     for i in 0..n {
                         st.y[i] = st.h * st.savf[i] - (st.yh[nyh + i] + st.acor[i]);
                     }
-                    st.iersl = match st.wm.solve(st.h, st.el0, &mut st.y[..n]) {
+                    #[cfg(feature = "timing")]
+                    let started = std::time::Instant::now();
+                    let solved = st.wm.solve(st.h, st.el0, &mut st.y[..n]);
+                    #[cfg(feature = "timing")]
+                    {
+                        st.timing.n_solve += 1;
+                        st.timing.t_solve += started.elapsed();
+                    }
+                    st.iersl = match solved {
                         Ok(()) => 0,
                         Err(e) => e.iersl(),
                     };

@@ -8,7 +8,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        features: ["", "--features sparse"]
+        features: ["", "--features sparse", "--features sparse,timing"]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
