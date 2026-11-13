@@ -59,6 +59,11 @@ pub enum InputError {
     /// integration cannot be continued (the fork's `ISTATE = -8` is not a
     /// legal input).
     Halted,
+    /// [`crate::Lsoda::dky`] was called before a step was completed (or
+    /// after a callback error stopped a step): there is no history yet.
+    NoStepTaken,
+    /// The output of [`crate::Lsoda::dky`] has fewer than `NEQ` components.
+    DkyLength { expected: usize, got: usize },
 }
 
 impl fmt::Display for InputError {
@@ -105,6 +110,10 @@ impl fmt::Display for InputError {
                 "at start of problem, too much accuracy requested for precision of machine (tolsf = {tolsf})"
             ),
             Self::Interpolation(e) => write!(f, "trouble in DINTDY: {e}"),
+            Self::NoStepTaken => write!(f, "no step taken yet: there is no history to interpolate"),
+            Self::DkyLength { expected, got } => {
+                write!(f, "dky output has length {got}, expected at least NEQ = {expected}")
+            }
             Self::Halted => write!(
                 f,
                 "integration halted by a callback error in the middle of a step; it cannot be continued"

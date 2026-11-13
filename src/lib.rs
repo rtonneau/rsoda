@@ -29,6 +29,6 @@ pub mod consts {
 
 pub use coefficients::Method;
 pub use error::{InputError, LsodaError};
-pub use lsoda::{Lsoda, MethodSwitch, Warning};
+pub use lsoda::{Lsoda, MethodSwitch, Nordsieck, Warning};
 pub use options::{JacobianKind, Options, OptionsBuilder, Tol, Tolerance};
 pub use system::{ClosureSystem, OdeSystem};
