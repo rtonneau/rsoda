@@ -11,7 +11,7 @@
 //! | `ITASK = 3` | [`Lsoda::advance_past`] |
 //! | `ITASK = 4` | [`Lsoda::integrate_tcrit`] |
 //! | `ITASK = 5` | [`Lsoda::step_tcrit`] |
-//! | `ISTATE = 1` | the first call after [`Lsoda::new`] or [`Lsoda::restart`], and every call until one has completed a step |
+//! | `ISTATE = 1` | the first call after [`Lsoda::new`], [`Lsoda::restart`] or [`Lsoda::restart_warm`], and every call until one has completed a step |
 //! | `ISTATE = 2` | any later call |
 //! | `ISTATE = 3` | the first call after a setter ([`Lsoda::set_tolerance`], ...) |
 //! | `ISTATE < 0` | `Err(`[`LsodaError`]`)` |
@@ -202,6 +202,9 @@ pub struct Lsoda<'a, S> {
     /// The user's linear solver for [`JacobianKind::Custom`] while it is not
     /// in use by the state.
     custom: Option<Box<dyn LinearSolver>>,
+    /// `METH` at the start of the problem: Adams, as in DLSODA, unless
+    /// [`Lsoda::restart_warm`] carried BDF over.
+    start_method: Method,
 }
 
 impl<S> fmt::Debug for Lsoda<'_, S> {
@@ -284,6 +287,7 @@ impl<'a, S: OdeSystem> Lsoda<'a, S> {
             on_warning: None,
             on_switch: None,
             custom,
+            start_method: Method::Adams,
         })
     }
 
@@ -314,6 +318,41 @@ impl<'a, S: OdeSystem> Lsoda<'a, S> {
     /// [`LsodaError::IllegalInput`] (and no change) if `y0` does not have
     /// `neq` components or `h0` is NaN.
     pub fn restart(&mut self, t0: f64, y0: &[f64], h0: f64) -> Result<(), LsodaError> {
+        self.restart_on(Method::Adams, t0, y0, h0)
+    }
+
+    /// A warm [`Lsoda::restart`]: the new problem starts on the method the
+    /// solver is on now ([`Lsoda::mcur`]), instead of Adams. Starting on BDF
+    /// saves the Adams steps and the stiffness detection a cold start goes
+    /// through again on a stiff problem; the iteration matrix is formed on
+    /// the first step. The automatic switching then goes on as usual. On
+    /// Adams, the warm start is the cold one ([`Lsoda::restart`]).
+    ///
+    /// The order is not carried over: the new problem starts at order 1,
+    /// as after [`Lsoda::restart`]. A restart has no history, only `y0` and
+    /// `h0 * f(t0, y0)`, so the higher columns of the Nordsieck array are
+    /// zero; at an order `q > 1` they would be taken for derivatives that
+    /// are zero, and the error estimate of order `q` would judge a step of
+    /// order 1. Tried on stiff problems (Robertson, HIRES), starting at the
+    /// previous order gave no gain in accuracy but more error-test failures
+    /// and `f` evaluations than starting at order 1, and DSTODA often had to
+    /// fall back to order 1 itself (three error-test failures in one step:
+    /// the history "has errors of the wrong order").
+    ///
+    /// Everything else is as for [`Lsoda::restart`] (what is kept, what is
+    /// reset, the next stepping call starting the problem), and the first
+    /// step on BDF is not reported as a method switch. A later
+    /// [`Lsoda::restart`] starts on Adams again.
+    ///
+    /// # Errors
+    ///
+    /// As [`Lsoda::restart`].
+    pub fn restart_warm(&mut self, t0: f64, y0: &[f64], h0: f64) -> Result<(), LsodaError> {
+        self.restart_on(self.st.meth, t0, y0, h0)
+    }
+
+    /// [`Lsoda::restart`] with the problem starting on `method`.
+    fn restart_on(&mut self, method: Method, t0: f64, y0: &[f64], h0: f64) -> Result<(), LsodaError> {
         if y0.len() != self.opts.neq {
             return Err(InputError::YLength { expected: self.opts.neq, got: y0.len() }.into());
         }
@@ -327,6 +366,7 @@ impl<'a, S: OdeSystem> Lsoda<'a, S> {
         self.changed = false;
         self.halted = false;
         self.nhnil = 0;
+        self.start_method = method;
         self.reset_state();
         Ok(())
     }
@@ -651,8 +691,9 @@ impl<'a, S: OdeSystem> Lsoda<'a, S> {
             }
         }
         // JSTART = 0, NST = NJE = NSLAST = 0, HU = 0, NQU = 0, MUSED = 0,
-        // METH = 1, MITER = 0, MAXORD = MXORDN and the CCMAX, MAXCOR, MSBP,
-        // MXNCF constants are set by the reset.
+        // METH = 1, MITER = 0, MAXORD = MXORDN (or the BDF values on a warm
+        // start) and the CCMAX, MAXCOR, MSBP, MXNCF constants are set by the
+        // reset.
         self.reset_state();
         let o = &self.opts;
         let n = o.neq;
@@ -725,7 +766,9 @@ impl<'a, S: OdeSystem> Lsoda<'a, S> {
     /// zeroed in their storage and the linear solver is kept unless its
     /// storage does not fit `opts.jacobian` (after [`Lsoda::set_jacobian`]);
     /// then it goes back to the pool (a custom one is kept) and the solver
-    /// for `opts.jacobian` takes its place.
+    /// for `opts.jacobian` takes its place. On a warm start on BDF
+    /// ([`Lsoda::restart_warm`]), `METH`, `MITER` and `MAXORD` then take the
+    /// values of a switch to BDF (statement 478 and block F).
     fn reset_state(&mut self) {
         let o = &self.opts;
         let st = &mut self.st;
@@ -737,6 +780,11 @@ impl<'a, S: OdeSystem> Lsoda<'a, S> {
         st.reset(o.neq, o.jacobian, o.mxordn, o.mxords);
         st.tn = self.t;
         st.tsw = self.t;
+        if self.start_method == Method::Bdf {
+            st.meth = Method::Bdf;
+            st.miter = Some(st.jtyp);
+            st.maxord = st.mxords;
+        }
     }
 
     /// Block B on a continuation call with `ISTATE = 3`: takes over the

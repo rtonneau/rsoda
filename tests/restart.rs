@@ -1,6 +1,9 @@
 //! `Lsoda::restart` against a solver created afresh by `Lsoda::new` with the
 //! same options: the integrations must agree bitwise (solution, step and
 //! evaluation counts), whatever the solver did before the restart.
+//!
+//! `Lsoda::restart_warm`: on BDF it starts on BDF at order 1 and stays
+//! within tolerance of a fresh solve; on Adams it is `restart`.
 
 use rsoda::{
     ClosureSystem, InputError, JacobianKind, Lsoda, LsodaError, Method, Options, OptionsBuilder, Tol, Tolerance,
@@ -214,4 +217,129 @@ fn restart_rejects_bad_input_without_change() {
     assert_eq!((s.t(), s.y(), s.nst(), s.options().h0), (t, &y[..], nst, h0));
     // The solver carries on as if nothing happened.
     s.integrate(4.0).unwrap();
+}
+
+// ----- Warm start (Lsoda::restart_warm) ---------------------------------------
+
+/// The largest weighted difference `|a - b| / (rtol |b| + atol)` between two
+/// solutions, with the tolerances of [`options`].
+fn weighted_diff(a: &[f64], b: &[f64]) -> f64 {
+    let atol = [1e-6, 1e-10, 1e-6];
+    a.iter().zip(b).zip(atol).map(|((a, b), atol)| (a - b).abs() / (1e-4 * b.abs() + atol)).fold(0.0, f64::max)
+}
+
+/// The global error allowed against a tight reference, in units of the
+/// tolerance (`weighted_diff`): LSODA controls the local error, and a fresh
+/// solve of these problems reaches about 2.1 (a warm one about 2.7).
+const GLOBAL_ERROR: f64 = 5.0;
+
+/// A warm restart of a solver that ended on BDF starts the new problem on
+/// BDF at order 1, and its solution stays within tolerance of a fresh
+/// solve: at every output time of [`trace`], both are within
+/// [`GLOBAL_ERROR`] of a tight reference.
+fn check_warm_start(kind: JacobianKind, system: impl Fn() -> ClosureSystem<'static>) {
+    let (t0, y0, h0) = STATES[0];
+    let sys = system();
+    let opts = options(&sys, kind, h0);
+    let mut warm = Lsoda::new(sys, opts, t0, &y0).unwrap();
+    let switches = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let log = switches.clone();
+    warm.on_method_switch(move |e| log.lock().unwrap().push(*e));
+    warm.integrate(4.0e5).unwrap();
+    for (k, &(t0, y0, h0)) in STATES.iter().enumerate() {
+        assert_eq!(warm.mcur(), Method::Bdf, "{kind:?}: state {k}: the previous solve ends on BDF");
+        assert!(warm.nqcur() > 1, "{kind:?}: state {k}: the previous solve ends above order 1");
+        warm.restart_warm(t0, &y0, h0).unwrap();
+        switches.lock().unwrap().clear();
+        assert_eq!((warm.t(), warm.y(), warm.tcur(), warm.tsw()), (t0, &y0[..], t0, t0));
+        assert_eq!((warm.nst(), warm.nfe(), warm.nje(), warm.nqu(), warm.mused()), (0, 0, 0, 0, None));
+        assert_eq!((warm.nqcur(), warm.mcur()), (1, Method::Bdf), "{kind:?}: state {k}");
+        // The first step is a BDF step of order 1 with a new iteration
+        // matrix, and no method switch.
+        warm.step(t0 + 4.0e5).unwrap();
+        assert_eq!((warm.nst(), warm.nqu(), warm.mused()), (1, 1, Some(Method::Bdf)), "{kind:?}: state {k}");
+        assert!(warm.nje() >= 1, "{kind:?}: state {k}");
+        assert!(switches.lock().unwrap().is_empty(), "{kind:?}: state {k}");
+
+        let sys = system();
+        let mut fresh = Lsoda::new(sys, options(&system(), kind, h0), t0, &y0).unwrap();
+        let tight = Tolerance { rtol: Tol::Scalar(1e-10), atol: Tol::PerComponent(vec![1e-12, 1e-16, 1e-12]) };
+        let sys = system();
+        let ropts = OptionsBuilder::new(3).jacobian(kind).tolerance(tight).mxstep(100_000).build(&sys).unwrap();
+        let mut reference = Lsoda::new(sys, ropts, t0, &y0).unwrap();
+        let mut tout = 0.4;
+        for _ in 0..10 {
+            for s in [&mut warm as &mut Lsoda<'_, _>, &mut fresh, &mut reference] {
+                s.integrate(t0 + tout).unwrap();
+            }
+            let (w, f, r) = (warm.y(), fresh.y(), reference.y());
+            let at = format!("{kind:?}: state {k}, t = {:e}", t0 + tout);
+            assert!(weighted_diff(f, r) <= GLOBAL_ERROR, "{at}: fresh {f:?}, reference {r:?}");
+            assert!(weighted_diff(w, r) <= GLOBAL_ERROR, "{at}: warm {w:?}, reference {r:?}");
+            assert!(weighted_diff(w, f) <= 2.0 * GLOBAL_ERROR, "{at}: warm {w:?}, fresh {f:?}");
+            tout *= 10.0;
+        }
+    }
+}
+
+#[test]
+fn warm_start_stays_within_tolerance_dense_and_banded() {
+    for kind in MATRIX_KINDS {
+        check_warm_start(kind, robertson);
+    }
+}
+
+#[cfg(feature = "sparse")]
+#[test]
+fn warm_start_stays_within_tolerance_sparse() {
+    check_warm_start(JacobianKind::SparseUser, || robertson_sparse(true));
+    check_warm_start(JacobianKind::SparseFd, || robertson_sparse(false));
+}
+
+/// On Adams, the warm start is the cold one, bit for bit; after a warm start
+/// on BDF, `restart` starts on Adams again, as a new solver does.
+#[test]
+fn warm_start_on_adams_and_cold_restart_after_a_warm_one() {
+    let (t0, y0, h0) = STATES[0];
+    let sys = robertson();
+    let opts = options(&sys, JacobianKind::DenseUser, h0);
+    let mut reused = Lsoda::new(sys, opts, t0, &y0).unwrap();
+    // Robertson switches to BDF at t = 6.0e-3.
+    reused.integrate(1.0e-3).unwrap();
+    assert_eq!(reused.mcur(), Method::Adams);
+    for &(t0, y0, h0) in &STATES {
+        let sys = robertson();
+        let opts = options(&sys, JacobianKind::DenseUser, h0);
+        let want = trace(&mut Lsoda::new(sys, opts, t0, &y0).unwrap());
+        reused.restart(t0, &y0, h0).unwrap();
+        reused.integrate(t0 + 1.0e-3).unwrap();
+        assert_eq!(reused.mcur(), Method::Adams);
+        reused.restart_warm(t0, &y0, h0).unwrap();
+        assert_eq!(reused.mcur(), Method::Adams);
+        let got = trace(&mut reused);
+        assert_eq!(got.mused, Some(Method::Bdf));
+        // Now on BDF: warm, then cold.
+        reused.restart_warm(t0, &y0, h0).unwrap();
+        assert_eq!(reused.mcur(), Method::Bdf);
+        reused.integrate(t0 + 4.0).unwrap();
+        reused.restart(t0, &y0, h0).unwrap();
+        assert_eq!((reused.mcur(), reused.nqcur()), (Method::Adams, 1));
+        let cold = trace(&mut reused);
+        assert_eq!(cold, want, "cold restart after a warm one, t0 = {t0}");
+        assert_eq!(got, want, "warm start on Adams, t0 = {t0}");
+    }
+}
+
+#[test]
+fn warm_start_rejects_bad_input_without_change() {
+    let (t0, y0, h0) = STATES[0];
+    let sys = robertson();
+    let opts = options(&sys, JacobianKind::DenseUser, h0);
+    let mut s = Lsoda::new(sys, opts, t0, &y0).unwrap();
+    s.integrate(40.0).unwrap();
+    let (t, y, nst, meth) = (s.t(), s.y().to_vec(), s.nst(), s.mcur());
+    assert!(matches!(s.restart_warm(1.0, &[1.0, 0.0], 0.0), Err(LsodaError::IllegalInput(InputError::YLength { .. }))));
+    assert!(matches!(s.restart_warm(1.0, &y0, f64::NAN), Err(LsodaError::IllegalInput(InputError::InvalidH0(_)))));
+    assert_eq!((s.t(), s.y(), s.nst(), s.mcur(), s.options().h0), (t, &y[..], nst, meth, h0));
+    s.integrate(400.0).unwrap();
 }
