@@ -246,6 +246,11 @@ pub fn stoda<S: OdeSystem + ?Sized>(st: &mut State, system: &mut S) -> Result<St
                 for i in 1..=12 {
                     st.cm1[i - 1] = st.tesco[i - 1][1] * st.elco[i - 1][i];
                 }
+                // Not in DSTODA: a warm start (Lsoda::restart_warm) may begin
+                // on BDF, whose coefficients must then be the ones in use.
+                if st.meth == Method::Bdf {
+                    cfode(Method::Bdf, &mut st.elco, &mut st.tesco);
+                }
                 L150
             }
 
@@ -1224,6 +1229,28 @@ mod tests {
         assert_eq!((d.st.elco, d.st.tesco), (elco, tesco));
         assert_eq!((d.st.icount, d.st.ratio, d.st.lmax), (19, 5.0, 13));
         assert_eq!((d.st.jstart, d.st.kflag, d.st.mused), (1, 0, Some(Method::Adams)));
+    }
+
+    #[test]
+    fn stoda_first_step_on_bdf_leaves_the_bdf_coefficients_loaded() {
+        // The warm start of Lsoda::restart_warm: METH = 2 from the start.
+        let kind = JacobianKind::DenseFd;
+        let mut d = Driver::new(decay(), kind, &[1.0], 0.0, 1.0, Tolerance::scalar(1e-6, 1e-6), 1e-4);
+        (d.st.meth, d.st.miter, d.st.maxord) = (Method::Bdf, Some(kind), 5);
+        assert_eq!(d.step(), StepOutcome::Success);
+        let (mut elco, mut tesco) = ([[0.0; 13]; 12], [[0.0; 3]; 12]);
+        cfode(Method::Adams, &mut elco, &mut tesco);
+        for q in 1..=12 {
+            assert_eq!(d.st.cm1[q - 1], tesco[q - 1][1] * elco[q - 1][q], "CM1({q})");
+        }
+        // BDF over Adams, as the switch to BDF leaves the arrays (L100).
+        cfode(Method::Bdf, &mut elco, &mut tesco);
+        for q in 1..=5 {
+            assert_eq!(d.st.cm2[q - 1], tesco[q - 1][1] * elco[q - 1][q], "CM2({q})");
+        }
+        assert_eq!((d.st.elco, d.st.tesco), (elco, tesco));
+        assert_eq!((d.st.icount, d.st.lmax, d.st.nje, d.st.nqu), (19, 6, 1, 1));
+        assert_eq!((d.st.meth, d.st.mused, d.switches.len()), (Method::Bdf, Some(Method::Bdf), 0));
     }
 
     #[test]

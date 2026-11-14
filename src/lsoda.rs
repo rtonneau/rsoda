@@ -11,7 +11,7 @@
 //! | `ITASK = 3` | [`Lsoda::advance_past`] |
 //! | `ITASK = 4` | [`Lsoda::integrate_tcrit`] |
 //! | `ITASK = 5` | [`Lsoda::step_tcrit`] |
-//! | `ISTATE = 1` | the first call after [`Lsoda::new`], and every call until one has completed a step |
+//! | `ISTATE = 1` | the first call after [`Lsoda::new`], [`Lsoda::restart`] or [`Lsoda::restart_warm`], and every call until one has completed a step |
 //! | `ISTATE = 2` | any later call |
 //! | `ISTATE = 3` | the first call after a setter ([`Lsoda::set_tolerance`], ...) |
 //! | `ISTATE < 0` | `Err(`[`LsodaError`]`)` |
@@ -28,7 +28,7 @@ use crate::coefficients::Method;
 use crate::consts::{MXHNL0, MXSTP0, UROUND};
 use crate::error::{InputError, LsodaError};
 use crate::interpolate::{StepData, intdy};
-use crate::linsol::{LinearSolver, MatrixSolver, builtin_solver, same_storage};
+use crate::linsol::{LinearSolver, builtin_solver, same_storage};
 use crate::norms::{ewset, invert_weights, vmnorm};
 use crate::options::{JacobianKind, Options, OptionsBuilder, Tol, Tolerance};
 use crate::sparse::SparsityPattern;
@@ -202,6 +202,9 @@ pub struct Lsoda<'a, S> {
     /// The user's linear solver for [`JacobianKind::Custom`] while it is not
     /// in use by the state.
     custom: Option<Box<dyn LinearSolver>>,
+    /// `METH` at the start of the problem: Adams, as in DLSODA, unless
+    /// [`Lsoda::restart_warm`] carried BDF over.
+    start_method: Method,
 }
 
 impl<S> fmt::Debug for Lsoda<'_, S> {
@@ -284,7 +287,88 @@ impl<'a, S: OdeSystem> Lsoda<'a, S> {
             on_warning: None,
             on_switch: None,
             custom,
+            start_method: Method::Adams,
         })
+    }
+
+    // ----- Restart -----------------------------------------------------------
+
+    /// Starts a new problem at `t0` with initial values `y0` and the initial
+    /// step size `h0` (`0.0`: chosen by the solver), reusing this solver:
+    /// the system, the options, the hooks, the solver state's work arrays
+    /// and the linear solver (its dense, band or sparse storage) are kept,
+    /// so nothing is reallocated, unless [`Lsoda::set_jacobian`] changed the
+    /// Jacobian kind to one with another storage: the linear solver is then
+    /// rebuilt for it.
+    ///
+    /// Everything else is reset as by [`Lsoda::new`]: the counters, the
+    /// history array, the method (Adams) and the order (1). The integration
+    /// that follows gives the same results as a solver created by
+    /// [`Lsoda::new`] with the same system and options and with
+    /// `options.h0 = h0`. As after [`Lsoda::new`], the next stepping call
+    /// starts the problem (`ISTATE = 1`), so options changed by setters
+    /// since then are all taken over.
+    ///
+    /// The system's [`OdeSystem::sparsity_pattern`] must not have changed: a
+    /// sparse linear solver is kept with the pattern it was built for, as
+    /// on [`Lsoda::set_jacobian`].
+    ///
+    /// # Errors
+    ///
+    /// [`LsodaError::IllegalInput`] (and no change) if `y0` does not have
+    /// `neq` components or `h0` is NaN.
+    pub fn restart(&mut self, t0: f64, y0: &[f64], h0: f64) -> Result<(), LsodaError> {
+        self.restart_on(Method::Adams, t0, y0, h0)
+    }
+
+    /// A warm [`Lsoda::restart`]: the new problem starts on the method the
+    /// solver is on now ([`Lsoda::mcur`]), instead of Adams. Starting on BDF
+    /// saves the Adams steps and the stiffness detection a cold start goes
+    /// through again on a stiff problem; the iteration matrix is formed on
+    /// the first step. The automatic switching then goes on as usual. On
+    /// Adams, the warm start is the cold one ([`Lsoda::restart`]).
+    ///
+    /// The order is not carried over: the new problem starts at order 1,
+    /// as after [`Lsoda::restart`]. A restart has no history, only `y0` and
+    /// `h0 * f(t0, y0)`, so the higher columns of the Nordsieck array are
+    /// zero; at an order `q > 1` they would be taken for derivatives that
+    /// are zero, and the error estimate of order `q` would judge a step of
+    /// order 1. Tried on stiff problems (Robertson, HIRES), starting at the
+    /// previous order gave no gain in accuracy but more error-test failures
+    /// and `f` evaluations than starting at order 1, and DSTODA often had to
+    /// fall back to order 1 itself (three error-test failures in one step:
+    /// the history "has errors of the wrong order").
+    ///
+    /// Everything else is as for [`Lsoda::restart`] (what is kept, what is
+    /// reset, the next stepping call starting the problem), and the first
+    /// step on BDF is not reported as a method switch. A later
+    /// [`Lsoda::restart`] starts on Adams again.
+    ///
+    /// # Errors
+    ///
+    /// As [`Lsoda::restart`].
+    pub fn restart_warm(&mut self, t0: f64, y0: &[f64], h0: f64) -> Result<(), LsodaError> {
+        self.restart_on(self.st.meth, t0, y0, h0)
+    }
+
+    /// [`Lsoda::restart`] with the problem starting on `method`.
+    fn restart_on(&mut self, method: Method, t0: f64, y0: &[f64], h0: f64) -> Result<(), LsodaError> {
+        if y0.len() != self.opts.neq {
+            return Err(InputError::YLength { expected: self.opts.neq, got: y0.len() }.into());
+        }
+        if h0.is_nan() {
+            return Err(InputError::InvalidH0(h0).into());
+        }
+        self.opts.h0 = h0;
+        self.t = t0;
+        self.y.copy_from_slice(y0);
+        self.init = false;
+        self.changed = false;
+        self.halted = false;
+        self.nhnil = 0;
+        self.start_method = method;
+        self.reset_state();
+        Ok(())
     }
 
     // ----- Stepping (ITASK 1 to 5) ------------------------------------------
@@ -593,26 +677,11 @@ impl<'a, S: OdeSystem> Lsoda<'a, S> {
     }
 
     /// Block C: the initializations of the first call, the initial call to
-    /// `f` and the initial step size. The state is rebuilt from scratch.
+    /// `f` and the initial step size. The state is reset in place to the one
+    /// of a new problem.
     fn start(&mut self, tout: f64, task: Task) -> Result<(), LsodaError> {
-        let o = &self.opts;
-        let n = o.neq;
         let t = self.t;
-        // JSTART = 0, NST = NJE = NSLAST = 0, HU = 0, NQU = 0, MUSED = 0,
-        // METH = 1, MITER = 0, MAXORD = MXORDN and the CCMAX, MAXCOR, MSBP,
-        // MXNCF constants are set by State::new.
-        // The linear solver of the old state goes back to the pool (a custom
-        // one is kept); built-in kinds get fresh zeroed storage, as before.
-        let placeholder = Box::new(MatrixSolver::new(1, &JacobianKind::DenseFd).unwrap());
-        let old = std::mem::replace(&mut self.st.wm, placeholder);
-        release_solver(&mut self.custom, &self.st.wm_kind, old);
-        let wm = take_solver(&mut self.custom, n, &o.jacobian, self.system.sparsity_pattern());
-        let mut st = State::with_solver(n, o.jacobian, o.mxordn, o.mxords, wm);
-        st.hmxi = hmxi(o.hmax);
-        st.hmin = o.hmin;
-        st.tn = t;
-        st.tsw = t;
-        let mut h0 = o.h0;
+        let mut h0 = self.opts.h0;
         if let Some(tcrit) = task.tcrit() {
             if (tcrit - tout) * (tout - t) < 0.0 {
                 return Err(InputError::TcritBehindTout { tcrit, tout }.into());
@@ -621,6 +690,16 @@ impl<'a, S: OdeSystem> Lsoda<'a, S> {
                 h0 = tcrit - t;
             }
         }
+        // JSTART = 0, NST = NJE = NSLAST = 0, HU = 0, NQU = 0, MUSED = 0,
+        // METH = 1, MITER = 0, MAXORD = MXORDN (or the BDF values on a warm
+        // start) and the CCMAX, MAXCOR, MSBP, MXNCF constants are set by the
+        // reset.
+        self.reset_state();
+        let o = &self.opts;
+        let n = o.neq;
+        let st = &mut self.st;
+        st.hmxi = hmxi(o.hmax);
+        st.hmin = o.hmin;
         self.nhnil = 0;
         // Initial call to F into YH(:,2).
         let f0 = st.nyh..st.nyh + n;
@@ -679,8 +758,33 @@ impl<'a, S: OdeSystem> Lsoda<'a, S> {
         for v in &mut st.yh[f0] {
             *v *= h0;
         }
-        self.st = st;
         Ok(())
+    }
+
+    /// Puts the solver state into the one [`Lsoda::new`] creates for a
+    /// problem starting at [`Lsoda::t`], in place: the work arrays are
+    /// zeroed in their storage and the linear solver is kept unless its
+    /// storage does not fit `opts.jacobian` (after [`Lsoda::set_jacobian`]);
+    /// then it goes back to the pool (a custom one is kept) and the solver
+    /// for `opts.jacobian` takes its place. On a warm start on BDF
+    /// ([`Lsoda::restart_warm`]), `METH`, `MITER` and `MAXORD` then take the
+    /// values of a switch to BDF (statement 478 and block F).
+    fn reset_state(&mut self) {
+        let o = &self.opts;
+        let st = &mut self.st;
+        if !same_storage(&st.wm_kind, &o.jacobian) {
+            let wm = take_solver(&mut self.custom, o.neq, &o.jacobian, self.system.sparsity_pattern());
+            let old = std::mem::replace(&mut st.wm, wm);
+            release_solver(&mut self.custom, &st.wm_kind, old);
+        }
+        st.reset(o.neq, o.jacobian, o.mxordn, o.mxords);
+        st.tn = self.t;
+        st.tsw = self.t;
+        if self.start_method == Method::Bdf {
+            st.meth = Method::Bdf;
+            st.miter = Some(st.jtyp);
+            st.maxord = st.mxords;
+        }
     }
 
     /// Block B on a continuation call with `ISTATE = 3`: takes over the
@@ -1053,6 +1157,7 @@ fn checked<S: OdeSystem + ?Sized>(o: Options, system: &S) -> Result<Options, Lso
 mod tests {
     use super::*;
     use crate::interpolate::IntdyError;
+    use crate::linsol::MatrixSolver;
     use crate::system::ClosureSystem;
     use std::cell::Cell;
     use std::rc::Rc;
@@ -1984,5 +2089,45 @@ mod tests {
         let mut s = rober(JacobianKind::DenseFd);
         assert_eq!(illegal(s.set_jacobian(JacobianKind::Custom)), InputError::MissingLinearSolver);
         assert_eq!(s.options().jacobian, JacobianKind::DenseFd);
+    }
+
+    /// The data address of the linear solver and of the history array.
+    fn storage<S>(s: &Lsoda<'_, S>) -> (*const (), *const f64) {
+        (&*s.st.wm as *const dyn LinearSolver as *const (), s.st.yh.as_ptr())
+    }
+
+    #[test]
+    fn lsoda_restart_keeps_state_storage_and_linear_solver() {
+        for kind in ROBER_KINDS {
+            let mut s = rober(kind);
+            let created = storage(&s);
+            // The first call starts the problem in the storage of `new`.
+            s.integrate(4.0e5).unwrap();
+            assert_eq!(s.mused(), Some(Method::Bdf), "{kind:?}");
+            assert_eq!(storage(&s), created, "{kind:?}: first start");
+            s.restart(0.0, &[1.0, 0.0, 0.0], 0.0).unwrap();
+            assert_eq!(storage(&s), created, "{kind:?}: restart");
+            s.integrate(4.0e5).unwrap();
+            assert_eq!(storage(&s), created, "{kind:?}: run after restart");
+        }
+    }
+
+    #[test]
+    fn lsoda_restart_reallocates_only_for_another_storage() {
+        let mut s = rober(JacobianKind::DenseUser);
+        s.integrate(4.0e5).unwrap();
+        let (wm, yh) = storage(&s);
+        s.set_jacobian(JacobianKind::DenseFd).unwrap();
+        s.restart(0.0, &[1.0, 0.0, 0.0], 0.0).unwrap();
+        assert_eq!(storage(&s), (wm, yh));
+        assert_eq!(s.st.wm_kind, JacobianKind::DenseFd);
+        s.set_jacobian(JacobianKind::BandedFd { ml: 2, mu: 2 }).unwrap();
+        s.restart(0.0, &[1.0, 0.0, 0.0], 0.0).unwrap();
+        assert_eq!(s.st.wm_kind, JacobianKind::BandedFd { ml: 2, mu: 2 });
+        assert_eq!(s.st.yh.as_ptr(), yh);
+        s.integrate(4.0e5).unwrap();
+        let mut fresh = rober(JacobianKind::BandedFd { ml: 2, mu: 2 });
+        fresh.integrate(4.0e5).unwrap();
+        assert_eq!((s.y(), s.nst(), s.nje()), (fresh.y(), fresh.nst(), fresh.nje()));
     }
 }
