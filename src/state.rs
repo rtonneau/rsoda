@@ -199,6 +199,42 @@ impl State {
 
     /// [`State::new`] with the linear solver `wm`, allocated for `jtyp`.
     pub fn with_solver(n: usize, jtyp: JacobianKind, mxordn: usize, mxords: usize, wm: Box<dyn LinearSolver>) -> Self {
+        Self::build(n, jtyp, mxordn, mxords, wm, Buffers::default())
+    }
+
+    /// Puts the state back into the one [`State::with_solver`] builds, in
+    /// place: every field takes its initial value and the work arrays are
+    /// zeroed, but their storage and the linear solver [`State::wm`] are
+    /// kept (nothing is reallocated while `n`, `mxordn` and `mxords` are
+    /// unchanged). [`State::wm_kind`] becomes `jtyp`: the caller must have
+    /// checked that [`State::wm`] has the storage of `jtyp`.
+    ///
+    /// # Panics
+    ///
+    /// As [`State::with_solver`].
+    pub fn reset(&mut self, n: usize, jtyp: JacobianKind, mxordn: usize, mxords: usize) {
+        let wm = std::mem::replace(&mut self.wm, Box::new(Detached));
+        let bufs = Buffers {
+            y: std::mem::take(&mut self.y),
+            yh: std::mem::take(&mut self.yh),
+            ewt: std::mem::take(&mut self.ewt),
+            savf: std::mem::take(&mut self.savf),
+            acor: std::mem::take(&mut self.acor),
+        };
+        *self = Self::build(n, jtyp, mxordn, mxords, wm, bufs);
+    }
+
+    /// The initial state, with the work arrays in `bufs` (resized and
+    /// zeroed). [`State::with_solver`] and [`State::reset`] share it, so the
+    /// two always agree on every initial value.
+    fn build(
+        n: usize,
+        jtyp: JacobianKind,
+        mxordn: usize,
+        mxords: usize,
+        wm: Box<dyn LinearSolver>,
+        bufs: Buffers,
+    ) -> Self {
         assert!(n > 0, "n must be positive");
         assert!((1..=MORD_NONSTIFF).contains(&mxordn), "mxordn must be in 1..=12");
         assert!((1..=MORD_STIFF).contains(&mxords), "mxords must be in 1..=5");
@@ -259,11 +295,11 @@ impl State {
             mused: None,
             mxordn,
             mxords,
-            y: vec![0.0; n],
-            yh: vec![0.0; nyh * ncol],
-            ewt: vec![0.0; n],
-            savf: vec![0.0; n],
-            acor: vec![0.0; n],
+            y: zeroed(bufs.y, n),
+            yh: zeroed(bufs.yh, nyh * ncol),
+            ewt: zeroed(bufs.ewt, n),
+            savf: zeroed(bufs.savf, n),
+            acor: zeroed(bufs.acor, n),
             wm,
             wm_kind: jtyp,
             #[cfg(feature = "timing")]
@@ -302,6 +338,47 @@ impl State {
     }
 }
 
+/// The work arrays of a [`State`], moved out by [`State::reset`] so that
+/// [`State::build`] can reuse their storage (empty for a new state).
+#[derive(Default)]
+struct Buffers {
+    y: Vec<f64>,
+    yh: Vec<f64>,
+    ewt: Vec<f64>,
+    savf: Vec<f64>,
+    acor: Vec<f64>,
+}
+
+/// `v` resized to `len` zeros, in its own storage when it is large enough.
+fn zeroed(mut v: Vec<f64>, len: usize) -> Vec<f64> {
+    v.clear();
+    v.resize(len, 0.0);
+    v
+}
+
+/// The placeholder [`State::wm`] while [`State::reset`] rebuilds the state
+/// (a zero-sized type: boxing it does not allocate). Never called.
+struct Detached;
+
+impl LinearSolver for Detached {
+    fn prepare(
+        &mut self,
+        _kind: &JacobianKind,
+        _system: &mut dyn crate::system::OdeSystem,
+        _input: &crate::prja::PrjaInput<'_>,
+        _y: &mut [f64],
+        _ftem: &mut [f64],
+        _nfe: &mut usize,
+        _nje: &mut usize,
+    ) -> Result<crate::prja::PrjaOutput, crate::error::LsodaError> {
+        unreachable!("placeholder linear solver used during State::reset")
+    }
+
+    fn solve(&mut self, _h: f64, _el0: f64, _x: &mut [f64]) -> Result<(), crate::solsy::SingularMatrix> {
+        unreachable!("placeholder linear solver used during State::reset")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -317,6 +394,29 @@ mod tests {
         // History storage covers the larger of the two maximum orders.
         let st = State::new(2, JacobianKind::DenseFd, 3, 5);
         assert_eq!(st.yh.len(), 2 * 6);
+    }
+
+    #[test]
+    fn stoda_state_reset_matches_a_new_state_and_keeps_storage() {
+        let kind = JacobianKind::DenseFd;
+        let mut st = State::new(3, kind, 12, 5);
+        // Dirty every kind of field.
+        st.tn = 2.0;
+        st.h = 0.1;
+        st.nst = 7;
+        st.nfe = 30;
+        st.meth = Method::Bdf;
+        st.miter = Some(kind);
+        st.mused = Some(Method::Bdf);
+        st.el[3] = 1.5;
+        st.elco[2][4] = -1.0;
+        st.yh.fill(4.0);
+        st.acor.fill(-2.0);
+        st.wm_kind = JacobianKind::DenseUser;
+        let (yh_ptr, acor_ptr) = (st.yh.as_ptr(), st.acor.as_ptr());
+        st.reset(3, kind, 12, 5);
+        assert_eq!(format!("{st:?}"), format!("{:?}", State::new(3, kind, 12, 5)));
+        assert_eq!((st.yh.as_ptr(), st.acor.as_ptr()), (yh_ptr, acor_ptr));
     }
 
     #[test]
